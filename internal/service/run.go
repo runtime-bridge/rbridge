@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,8 +16,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rbridge/rbridge/internal/audit"
 	"github.com/rbridge/rbridge/internal/buildinfo"
 	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/rbridge/rbridge/internal/policy"
 	"github.com/rbridge/rbridge/internal/process"
 	"github.com/rbridge/rbridge/internal/providers/acp"
 	"github.com/rbridge/rbridge/internal/providers/claudeheadless"
@@ -34,6 +37,8 @@ type RunOptions struct {
 	// Approver answers permission requests. Nil denies everything.
 	Approver domain.Approver
 	Model    string
+	// Profile overrides the stored profile when resuming a session.
+	Profile string
 	// Client names the caller in session records, for example "cli".
 	Client string
 }
@@ -47,6 +52,10 @@ type Session struct {
 	scratch string
 	release func()
 	timeout time.Duration
+	gate    *gate
+
+	lastOutput string
+	lastCode   domain.ErrorCode
 
 	mu     sync.Mutex
 	rec    domain.SessionRecord
@@ -234,6 +243,9 @@ func (s *Service) ResumeSession(ctx context.Context, id string, ro RunOptions) (
 	rec.OwnerPID = os.Getpid()
 	rec.Client = ro.Client
 	t := domain.Task{Workspace: rec.Workspace, Prompt: domain.Text("resume"), Skills: skills, Provider: m.ID, Profile: rec.Profile}
+	if ro.Profile != "" {
+		t.Profile = ro.Profile
+	}
 	return s.start(ctx, m, st, rec, t, ro, rec.NativeID)
 }
 
@@ -260,6 +272,20 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		return nil, err
 	}
 
+	prof, err := s.profile(t.Profile)
+	if err != nil {
+		return fail(err)
+	}
+	controls := policy.Enforcement(prof, m.Integration)
+	unenforced := policy.Unenforced(prof, controls)
+	for _, need := range s.cfg.Policy.RequireEnforced {
+		if slices.Contains(unenforced, need) {
+			return fail(domain.Errorf(domain.ErrPolicyUnenforceable, "profile %s wants %s restricted, which rbridge cannot enforce for %s", prof.Name, need, m.ID))
+		}
+	}
+	rec.Profile = prof.Name
+	rec.Unenforced = unenforced
+
 	seq := &sequencer{session: rec.ID, provider: m.ID, out: ro.Sink, now: s.now, keepRaw: s.cfg.Audit.Level == "full"}
 	if s.cfg.Audit.Level == "events" || s.cfg.Audit.Level == "full" {
 		dir := filepath.Join(s.paths.DataDir, "events")
@@ -270,26 +296,27 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		}
 	}
 
-	plan, err := s.prepareSkills(ctx, m, t, scratch, seq)
+	plan, trusts, err := s.prepareSkills(ctx, m, t, scratch, seq)
 	if err != nil {
 		return fail(err)
 	}
 	rec.Skills = plan.Deliveries
+	pctx := policy.Context{Workspace: t.Workspace, Skills: map[string]domain.TrustState{}}
+	for id, dir := range plan.Paths {
+		pctx.Skills[dir] = trusts[id].trust
+		pctx.Skills[trusts[id].lib] = trusts[id].trust
+	}
+	g := &gate{profile: prof, pctx: pctx, user: ro.Approver, timeout: s.cfg.Policy.ApprovalTimeout, sink: seq}
+	seq.Emit(domain.NewEvent(domain.EventNotice, enforcementNotice(prof, controls)))
 
 	allow := append(slices.Clone(s.cfg.Policy.EnvAllowlist), m.Launch.EnvPassthrough...)
 	env := process.FilterEnv(s.environ(), allow, plan.Env)
 	opts := domain.SessionOptions{
 		BridgeID: rec.ID, Workspace: t.Workspace, Executable: st.Runtime.Executable, Env: env,
 		ResumeNativeID: resume, SkillDirs: plan.SkillDirs, MCPServers: t.MCPServers, Model: ro.Model,
-		OutputSchema: t.OutputSchema, Approver: ro.Approver, IdleTimeout: s.cfg.Execution.IdleTimeout,
+		OutputSchema: t.OutputSchema, Approver: g, IdleTimeout: s.cfg.Execution.IdleTimeout,
 		KillGrace: s.cfg.Execution.KillGracePeriod, ScratchDir: scratch,
-	}
-	if opts.Approver == nil {
-		opts.Approver = domain.ApproverFunc(func(_ context.Context, r domain.ApprovalRequest) domain.ApprovalDecision {
-			d := r.RejectOnce("policy")
-			d.Reason = "no approver configured"
-			return d
-		})
+		ClientFSWrite: prof.ClientFSWrite, FSGate: g.FS, DisallowedTools: prof.ClaudeDisallowed,
 	}
 	rec.State = domain.StateStarting
 	_ = s.store.Put(ctx, sessionCollection, rec.ID, rec)
@@ -319,41 +346,48 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	if timeout == 0 {
 		timeout = s.cfg.Execution.TaskTimeout
 	}
-	return &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout}, nil
+	return &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout, gate: g}, nil
 }
 
-func (s *Service) prepareSkills(ctx context.Context, m registry.Manifest, t domain.Task, scratch string, seq *sequencer) (deliver.Plan, error) {
+type skillTrust struct {
+	trust domain.TrustState
+	lib   string
+}
+
+func (s *Service) prepareSkills(ctx context.Context, m registry.Manifest, t domain.Task, scratch string, seq *sequencer) (deliver.Plan, map[string]skillTrust, error) {
+	trusts := map[string]skillTrust{}
 	if len(t.Skills) == 0 {
-		return deliver.Plan{Env: map[string]string{}}, nil
+		return deliver.Plan{Env: map[string]string{}}, trusts, nil
 	}
 	reg := s.Skills()
 	var items []deliver.Item
 	for _, id := range t.Skills {
 		rec, err := reg.Require(ctx, id)
 		if err != nil {
-			return deliver.Plan{}, err
+			return deliver.Plan{}, nil, err
 		}
 		switch {
 		case rec.Trust == domain.TrustBlocked:
-			return deliver.Plan{}, domain.Errorf(domain.ErrSkillBlocked, "skill %s is blocked", id)
+			return deliver.Plan{}, nil, domain.Errorf(domain.ErrSkillBlocked, "skill %s is blocked", id)
 		case rec.Trust == domain.TrustUnreviewed && !s.cfg.Skills.AllowUnreviewed:
-			return deliver.Plan{}, domain.Errorf(domain.ErrSkillBlocked, "skill %s is unreviewed; review it and run rbridge skills trust %s reviewed", id, id)
+			return deliver.Plan{}, nil, domain.Errorf(domain.ErrSkillBlocked, "skill %s is unreviewed; review it and run rbridge skills trust %s reviewed", id, id)
 		}
 		if err := reg.Verify(ctx, rec); err != nil {
-			return deliver.Plan{}, err
+			return deliver.Plan{}, nil, err
 		}
 		dir := reg.Path(rec)
 		sk, err := spec.Parse(dir, reg.Limits)
 		if err != nil {
-			return deliver.Plan{}, &domain.Error{Code: domain.ErrSkillInvalid, Message: err.Error(), Cause: err}
+			return deliver.Plan{}, nil, &domain.Error{Code: domain.ErrSkillInvalid, Message: err.Error(), Cause: err}
 		}
 		items = append(items, deliver.Item{Record: rec, Dir: dir, Scripts: rec.Trust.ScriptsAllowed(), ScriptFiles: sk.Scripts})
+		trusts[id] = skillTrust{trust: rec.Trust, lib: dir}
 	}
 	plan, err := deliver.Prepare(deliver.Request{
 		Strategy: deliver.Strategy(m.Skills.Strategy), Layout: m.Skills.SessionDir, Scratch: scratch, Items: items, Getenv: s.getenv,
 	})
 	if err != nil {
-		return plan, err
+		return plan, nil, err
 	}
 	loc := s.skillLocations(m)
 	for _, c := range deliver.FindClashes(t.Skills, t.Workspace, loc.Project, loc.User) {
@@ -362,7 +396,7 @@ func (s *Service) prepareSkills(ctx context.Context, m registry.Manifest, t doma
 	for _, d := range plan.Deliveries {
 		seq.Emit(domain.NewEvent(domain.EventSkillDelivered, domain.SkillDeliveredData{SkillID: d.SkillID, Digest: d.Digest, Mode: d.Mode, Scripts: plan.Scripts[d.SkillID]}))
 	}
-	return plan, nil
+	return plan, trusts, nil
 }
 
 // Prompt runs one turn within the task timeout.
@@ -417,9 +451,15 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 			de.Provider = s.m.ID
 		}
 		de.SessionID = rec.ID
+		s.mu.Lock()
+		s.lastCode = de.Code
+		s.mu.Unlock()
 		s.sink.Emit(domain.NewEvent(domain.EventTurnFailed, domain.TurnFailedData{Code: de.Code, Message: de.Message}))
 		return domain.Result{SessionID: rec.ID, Provider: s.m.ID, Skills: rec.Skills, Errors: []*domain.Error{de}}, de
 	}
+	s.mu.Lock()
+	s.lastOutput, s.lastCode = res.Output, ""
+	s.mu.Unlock()
 	s.sink.Emit(domain.NewEvent(domain.EventTurnCompleted, domain.TurnCompletedData{StopReason: res.StopReason, Usage: res.Usage}))
 	return domain.Result{
 		SessionID: rec.ID, StopReason: res.StopReason, Output: res.Output, Structured: res.Structured,
@@ -452,8 +492,33 @@ func (s *Session) Close(ctx context.Context) error {
 	rec := s.rec
 	s.mu.Unlock()
 	_ = s.svc.store.Put(context.Background(), sessionCollection, rec.ID, rec)
+	s.svc.writeAudit(rec, s)
 	s.release()
 	return err
+}
+
+func (s *Service) writeAudit(rec domain.SessionRecord, sess *Session) {
+	if !s.cfg.Audit.Enabled {
+		return
+	}
+	sess.mu.Lock()
+	out, code := sess.lastOutput, sess.lastCode
+	sess.mu.Unlock()
+	r := audit.Record{
+		ID: newID("aud_"), Time: s.now().UTC(), SessionID: rec.ID, Client: rec.Client, Provider: rec.ProviderID,
+		Workspace: rec.Workspace, Profile: rec.Profile, Skills: rec.Skills, Approvals: sess.gate.snapshot(),
+		Turns: rec.Turns, StopReason: rec.LastStop, ErrorCode: code, Unenforced: rec.Unenforced,
+	}
+	if out != "" {
+		sum := sha256.Sum256([]byte(out))
+		r.ResultDigest = "sha256:" + hex.EncodeToString(sum[:])
+	}
+	_ = s.Audit().Append(r)
+}
+
+// Audit returns the audit log.
+func (s *Service) Audit() *audit.Log {
+	return &audit.Log{Dir: filepath.Join(s.paths.DataDir, "audit"), Retention: s.cfg.Audit.Retention, Now: s.now}
 }
 
 // Run executes a task as a one-turn session.

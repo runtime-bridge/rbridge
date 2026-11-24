@@ -31,6 +31,13 @@ type SessionOptions struct {
 	KillGrace time.Duration
 	// ScratchDir is a private directory for this session's generated files.
 	ScratchDir string
+	// ClientFSWrite offers ACP agents fs/write_text_file.
+	ClientFSWrite bool
+	// FSGate checks file operations rbridge performs for the runtime.
+	// kind is "read" or "edit". A nil gate allows everything inside the workspace.
+	FSGate func(ctx context.Context, kind, path string) error
+	// DisallowedTools are runtime tools to remove where the runtime supports it.
+	DisallowedTools []string
 }
 
 // Turn is one prompt sent to a session.

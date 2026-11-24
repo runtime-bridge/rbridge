@@ -109,7 +109,7 @@ func (s *Session) handshake(ctx context.Context, l Launch) error {
 	ir, err := s.conn.Initialize(hctx, sdk.InitializeRequest{
 		ProtocolVersion: sdk.ProtocolVersionNumber,
 		ClientCapabilities: sdk.ClientCapabilities{
-			Fs: sdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+			Fs: sdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: s.opts.ClientFSWrite},
 		},
 		ClientInfo: &sdk.Implementation{Name: name, Version: ver},
 	})

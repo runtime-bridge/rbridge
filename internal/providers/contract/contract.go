@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,14 +56,7 @@ func (r *Recorder) Types() []domain.EventType {
 }
 
 // Has reports whether an event of type t was emitted.
-func (r *Recorder) Has(t domain.EventType) bool {
-	for _, x := range r.Types() {
-		if x == t {
-			return true
-		}
-	}
-	return false
-}
+func (r *Recorder) Has(t domain.EventType) bool { return slices.Contains(r.Types(), t) }
 
 func baseOpts(t *testing.T) domain.SessionOptions {
 	ws := t.TempDir()
@@ -70,11 +64,12 @@ func baseOpts(t *testing.T) domain.SessionOptions {
 		ws = r
 	}
 	return domain.SessionOptions{
-		BridgeID:    "ses_test",
-		Workspace:   ws,
-		IdleTimeout: 0,
-		KillGrace:   time.Second,
-		ScratchDir:  t.TempDir(),
+		BridgeID:      "ses_test",
+		Workspace:     ws,
+		IdleTimeout:   0,
+		KillGrace:     time.Second,
+		ScratchDir:    t.TempDir(),
+		ClientFSWrite: true,
 	}
 }
 

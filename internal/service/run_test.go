@@ -333,12 +333,12 @@ func TestApprovalsFlowThroughService(t *testing.T) {
 		asked = append(asked, r)
 		return r.AllowOnce("user")
 	})
-	res, err := h.svc().Run(context.Background(), domain.Task{Workspace: ws, Prompt: domain.Text("x"), Provider: "claude-code"}, RunOptions{Approver: approver})
+	res, err := h.svc().Run(context.Background(), domain.Task{Workspace: ws, Prompt: domain.Text("x"), Provider: "claude-code", Profile: "controlled"}, RunOptions{Approver: approver})
 	if err != nil || res.Output != "allowed" || len(asked) != 1 || asked[0].SessionID != res.SessionID {
 		t.Fatalf("%+v %v %+v", res, err, asked)
 	}
 	os.Remove(filepath.Join(ws, "notes.txt"))
-	res, err = h.svc().Run(context.Background(), domain.Task{Workspace: ws, Prompt: domain.Text("x"), Provider: "claude-code"}, RunOptions{})
+	res, err = h.svc().Run(context.Background(), domain.Task{Workspace: ws, Prompt: domain.Text("x"), Provider: "claude-code", Profile: "controlled"}, RunOptions{})
 	if err != nil || res.Output != "denied" {
 		t.Fatalf("default must deny: %+v %v", res, err)
 	}

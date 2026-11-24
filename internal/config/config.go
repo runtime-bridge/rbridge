@@ -80,6 +80,19 @@ type PolicyConfig struct {
 	DefaultProfile  string        `yaml:"default_profile"`
 	ApprovalTimeout time.Duration `yaml:"approval_timeout"`
 	EnvAllowlist    []string      `yaml:"env_allowlist"`
+	Custom          CustomProfile `yaml:"custom"`
+	// RequireEnforced fails a task when one of these controls is wanted by
+	// the profile but cannot be enforced (for example network).
+	RequireEnforced []string `yaml:"require_enforced"`
+}
+
+// CustomProfile configures the "custom" policy profile.
+type CustomProfile struct {
+	// Rules map ACP tool kinds (read, edit, execute, ...) to allow, deny or ask.
+	Rules         map[string]string `yaml:"rules"`
+	OutsideRead   string            `yaml:"outside_read"`
+	ClientFSWrite bool              `yaml:"client_fs_write"`
+	BlockNetwork  bool              `yaml:"block_network"`
 }
 
 type ExecutionConfig struct {

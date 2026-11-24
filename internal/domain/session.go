@@ -70,6 +70,8 @@ type SessionRecord struct {
 	Client     string          `json:"client,omitempty"`
 	// OwnerPID is the rbridge process that holds the runtime session.
 	OwnerPID int `json:"owner_pid,omitempty"`
+	// Unenforced lists controls the profile wanted but rbridge could not enforce.
+	Unenforced []string `json:"unenforced,omitempty"`
 }
 
 // Usage is token and cost information when a runtime reports it.

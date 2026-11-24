@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestRunAndEvents(t *testing.T) {
 	if !strings.Contains(res.Output, "from the library") || res.StopReason != bridge.StopEndTurn {
 		t.Fatalf("%+v", res)
 	}
-	if types[0] != bridge.EventSessionStarted && types[0] != bridge.EventTurnStarted {
+	if types[0] != bridge.EventNotice || !slices.Contains(types, bridge.EventSessionStarted) || types[len(types)-1] != bridge.EventSessionClosed {
 		t.Fatalf("events %v", types)
 	}
 }

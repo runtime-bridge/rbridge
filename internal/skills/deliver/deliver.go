@@ -55,12 +55,14 @@ type Plan struct {
 	Env        map[string]string
 	Deliveries []domain.SkillDelivery
 	Scripts    map[string]bool
+	// Paths maps each skill id to the directory the runtime will see.
+	Paths map[string]string
 }
 
 // Prepare lays out the skills for one session. Everything is created under
 // Scratch, which the caller removes when the session ends.
 func Prepare(req Request) (Plan, error) {
-	plan := Plan{Env: map[string]string{}, Scripts: map[string]bool{}}
+	plan := Plan{Env: map[string]string{}, Scripts: map[string]bool{}, Paths: map[string]string{}}
 	if len(req.Items) == 0 {
 		return plan, nil
 	}
@@ -127,6 +129,7 @@ func Prepare(req Request) (Plan, error) {
 			mode += "+no-scripts"
 		}
 		plan.Scripts[it.Record.ID] = it.Scripts || len(it.ScriptFiles) == 0
+		plan.Paths[it.Record.ID] = dest
 		plan.Deliveries = append(plan.Deliveries, domain.SkillDelivery{SkillID: it.Record.ID, Digest: it.Record.Digest, Mode: mode})
 	}
 	return plan, nil

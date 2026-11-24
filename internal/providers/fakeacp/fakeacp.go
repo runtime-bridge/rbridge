@@ -33,6 +33,7 @@ const (
 //	crash       exits in the middle of a prompt
 //	spawn       starts a long-lived child and writes its pid to child.pid
 //	env         replies with NAME=value for each variable named in the prompt
+//	writedirect writes direct.txt through fs/write_text_file without asking
 type agent struct {
 	conn     *sdk.AgentSideConnection
 	scenario string
@@ -222,6 +223,16 @@ func (a *agent) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResp
 		time.Sleep(50 * time.Millisecond)
 		fmt.Fprintln(os.Stderr, "fake agent: simulated crash")
 		os.Exit(3)
+
+	case "writedirect":
+		// Writes without asking permission first, as a careless agent might.
+		_, err := a.conn.WriteTextFile(ctx, sdk.WriteTextFileRequest{SessionId: sid, Path: filepath.Join(cwd, "direct.txt"), Content: "x"})
+		if err != nil {
+			a.send(ctx, sid, sdk.UpdateAgentMessageText("write refused: "+err.Error()))
+		} else {
+			a.send(ctx, sid, sdk.UpdateAgentMessageText("write done"))
+		}
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 
 	case "env":
 		var parts []string

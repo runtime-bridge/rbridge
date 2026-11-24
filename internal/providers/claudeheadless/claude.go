@@ -72,6 +72,10 @@ type resultMsg struct {
 func Args(base []string, opts domain.SessionOptions, sessionID string, mcpConfig string) []string {
 	args := append([]string(nil), base...)
 	args = append(args, "--permission-prompts", "host", "--permission-prompt-tool", "stdio")
+	if len(opts.DisallowedTools) > 0 {
+		args = append(args, "--disallowed-tools")
+		args = append(args, opts.DisallowedTools...)
+	}
 	mode := opts.PermissionMode
 	if mode == "" {
 		mode = "default"

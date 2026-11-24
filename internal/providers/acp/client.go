@@ -158,9 +158,22 @@ func (c *client) insideWorkspace(p string) (string, error) {
 	return full, nil
 }
 
-func (c *client) ReadTextFile(_ context.Context, p sdk.ReadTextFileRequest) (sdk.ReadTextFileResponse, error) {
+func (c *client) gate(ctx context.Context, kind, path string) error {
+	if c.s.opts.FSGate == nil {
+		return nil
+	}
+	if err := c.s.opts.FSGate(ctx, kind, path); err != nil {
+		return sdk.NewRequestError(-32001, err.Error(), map[string]string{"path": path})
+	}
+	return nil
+}
+
+func (c *client) ReadTextFile(ctx context.Context, p sdk.ReadTextFileRequest) (sdk.ReadTextFileResponse, error) {
 	path, err := c.insideWorkspace(p.Path)
 	if err != nil {
+		return sdk.ReadTextFileResponse{}, err
+	}
+	if err := c.gate(ctx, "read", path); err != nil {
 		return sdk.ReadTextFileResponse{}, err
 	}
 	b, err := os.ReadFile(path)
@@ -189,9 +202,15 @@ func (c *client) ReadTextFile(_ context.Context, p sdk.ReadTextFileRequest) (sdk
 	return sdk.ReadTextFileResponse{Content: text}, nil
 }
 
-func (c *client) WriteTextFile(_ context.Context, p sdk.WriteTextFileRequest) (sdk.WriteTextFileResponse, error) {
+func (c *client) WriteTextFile(ctx context.Context, p sdk.WriteTextFileRequest) (sdk.WriteTextFileResponse, error) {
+	if !c.s.opts.ClientFSWrite {
+		return sdk.WriteTextFileResponse{}, sdk.NewRequestError(-32601, "file writes are not offered in this session", nil)
+	}
 	path, err := c.insideWorkspace(p.Path)
 	if err != nil {
+		return sdk.WriteTextFileResponse{}, err
+	}
+	if err := c.gate(ctx, "edit", path); err != nil {
 		return sdk.WriteTextFileResponse{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
