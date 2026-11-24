@@ -61,7 +61,7 @@ func TestRunAndEvents(t *testing.T) {
 	}
 	defer b.Close()
 	providers, err := b.Providers(ctx, true)
-	if err != nil || len(providers) != 2 {
+	if err != nil || len(providers) != 5 {
 		t.Fatalf("providers %+v %v", providers, err)
 	}
 	var types []bridge.EventType

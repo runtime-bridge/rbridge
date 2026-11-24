@@ -41,6 +41,9 @@ const (
 	HealthUnhealthy Health = "unhealthy"
 	HealthMissing   Health = "missing"
 	HealthDisabled  Health = "disabled"
+	// HealthNeedsAPIKey means the runtime is installed but rbridge will only
+	// use it with an API key, because of the provider's terms.
+	HealthNeedsAPIKey Health = "needs-api-key"
 )
 
 // Installation is one copy of a runtime found on the machine.

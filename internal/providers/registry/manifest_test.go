@@ -24,7 +24,7 @@ func TestOrderAndCustom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ids(r); !slices.Equal(got, []string{"opencode", "my-agent", "claude-code"}) {
+	if got := ids(r); !slices.Equal(got, []string{"opencode", "my-agent", "claude-acp", "claude-code", "codex", "gemini-cli"}) {
 		t.Fatalf("order = %v", got)
 	}
 	m, ok := r.Get("my-agent")

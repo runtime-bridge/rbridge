@@ -26,8 +26,13 @@ type Manifest struct {
 	// AuthEnv names environment variables whose presence means the runtime
 	// will use API-key or cloud-provider billing. Values are never read.
 	AuthEnv []string
-	Limits  []string
-	Notes   []string
+	// RequireAuthEnv makes detection report needs-api-key unless one of
+	// AuthEnv is set, or the user allows account login for this provider.
+	RequireAuthEnv bool
+	// AccountLoginForbidden ignores allow_account_login.
+	AccountLoginForbidden bool
+	Limits                []string
+	Notes                 []string
 }
 
 // DetectSpec says where to look for the runtime and how to ask its version.
@@ -61,8 +66,13 @@ type SkillDirs struct {
 	Strategy string
 }
 
+// caps sets the source on each entry; capabilities not listed are unknown
+// until a handshake reports them.
 func caps(src domain.CapabilitySource, entries map[domain.CapabilityName]domain.Capability) domain.CapabilitySet {
-	out := make(domain.CapabilitySet, len(entries))
+	out := make(domain.CapabilitySet, len(domain.KnownCapabilities))
+	for _, n := range domain.KnownCapabilities {
+		out[n] = domain.Capability{Supported: domain.SupportUnknown, Source: src}
+	}
 	for k, v := range entries {
 		v.Source = src
 		out[k] = v
@@ -185,8 +195,117 @@ func OpenCode() Manifest {
 	}
 }
 
+// GeminiCLI is the built-in manifest for Gemini CLI over ACP. Its terms
+// forbid driving the services behind Gemini CLI's Google login from
+// third-party software, so an API key is required unless the user opts in.
+func GeminiCLI() Manifest {
+	return Manifest{
+		ID:          "gemini-cli",
+		DisplayName: "Gemini CLI",
+		Class:       domain.ClassAgentRuntime,
+		Integration: domain.IntegrationACP,
+		BuiltIn:     true,
+		Detect: DetectSpec{
+			Executables: []string{"gemini"},
+			KnownDirs:   append([]string{"$APPDATA/npm"}, commonUnixDirs...),
+			VersionArgs: []string{"--version"},
+		},
+		Launch: LaunchSpec{
+			Args:           []string{"--acp"},
+			EnvPassthrough: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "GOOGLE_APPLICATION_CREDENTIALS", "GEMINI_MODEL"},
+		},
+		Skills: SkillDirs{
+			Project: []string{".gemini/skills", ".agents/skills"},
+			User:    []string{"~/.gemini/skills", "~/.agents/skills"},
+		},
+		Capabilities: caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
+			domain.CapStreaming: yes("acp session/update"),
+			domain.CapCancel:    yes("session/cancel"),
+			domain.CapSkills:    partial("native discovery only; no per-session delivery yet"),
+			domain.CapApprovals: yes("session/request_permission"),
+			domain.CapOffline:   no(),
+		}),
+		AuthEnv:        []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI"},
+		RequireAuthEnv: true,
+		Limits: []string{
+			"Needs GEMINI_API_KEY, GOOGLE_API_KEY or Vertex AI settings unless providers.gemini-cli.allow_account_login is set.",
+			"Older releases use --experimental-acp; set providers.gemini-cli.args if yours does.",
+		},
+		Notes: []string{"Gemini CLI's terms forbid using its Google login from third-party software; read them before allowing account login."},
+	}
+}
+
+// Codex is the built-in manifest for OpenAI Codex through the codex-acp adapter.
+func Codex() Manifest {
+	return Manifest{
+		ID:          "codex",
+		DisplayName: "Codex",
+		Class:       domain.ClassAgentRuntime,
+		Integration: domain.IntegrationACP,
+		BuiltIn:     true,
+		Detect: DetectSpec{
+			Executables: []string{"codex-acp"},
+			KnownDirs:   append([]string{"$APPDATA/npm"}, commonUnixDirs...),
+			VersionArgs: []string{"--version"},
+		},
+		Launch: LaunchSpec{
+			EnvPassthrough: []string{"CODEX_API_KEY", "OPENAI_API_KEY", "CODEX_HOME", "NO_BROWSER"},
+		},
+		Skills: SkillDirs{
+			Project: []string{".agents/skills"},
+		},
+		Capabilities: caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
+			domain.CapStreaming: yes("acp session/update"),
+			domain.CapCancel:    yes("session/cancel"),
+			domain.CapSkills:    partial("native discovery only; no per-session delivery yet"),
+			domain.CapApprovals: yes("session/request_permission"),
+			domain.CapOffline:   no(),
+		}),
+		AuthEnv: []string{"CODEX_API_KEY", "OPENAI_API_KEY"},
+		Notes:   []string{"OpenAI recommends API keys (CODEX_API_KEY) for automated use; a ChatGPT login also works with codex-acp."},
+	}
+}
+
+// ClaudeACP is Claude through the ACP adapter, which is built on the Claude
+// Agent SDK. Anthropic's terms require API key authentication for that, so
+// account login cannot be enabled (decision D10).
+func ClaudeACP() Manifest {
+	return Manifest{
+		ID:          "claude-acp",
+		DisplayName: "Claude (ACP adapter)",
+		Class:       domain.ClassAgentRuntime,
+		Integration: domain.IntegrationACP,
+		BuiltIn:     true,
+		Detect: DetectSpec{
+			Executables: []string{"claude-agent-acp"},
+			KnownDirs:   append([]string{"$APPDATA/npm"}, commonUnixDirs...),
+			VersionArgs: []string{"--version"},
+		},
+		Launch: LaunchSpec{
+			EnvPassthrough: []string{"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_EXECUTABLE", "CLAUDE_CONFIG_DIR", "AWS_REGION", "AWS_PROFILE", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID"},
+		},
+		Skills: SkillDirs{
+			Project: []string{".claude/skills"},
+			User:    []string{"$CLAUDE_CONFIG_DIR/skills|~/.claude/skills"},
+		},
+		Capabilities: caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
+			domain.CapStreaming: yes("acp session/update"),
+			domain.CapCancel:    yes("session/cancel"),
+			domain.CapSkills:    partial("native discovery only; use claude-code for per-session delivery"),
+			domain.CapApprovals: yes("session/request_permission"),
+			domain.CapOffline:   no(),
+		}),
+		AuthEnv:               []string{"ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"},
+		RequireAuthEnv:        true,
+		AccountLoginForbidden: true,
+		Limits:                []string{"Runs only with an Anthropic API key or a cloud provider; use claude-code for your own Claude subscription."},
+	}
+}
+
 // BuiltIns returns every built-in manifest.
-func BuiltIns() []Manifest { return []Manifest{ClaudeCode(), OpenCode()} }
+func BuiltIns() []Manifest {
+	return []Manifest{ClaudeCode(), OpenCode(), Codex(), GeminiCLI(), ClaudeACP()}
+}
 
 // FromCustom turns a configured custom ACP agent into a manifest. Its
 // capabilities are unknown until a handshake reports them.

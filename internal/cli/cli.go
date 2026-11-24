@@ -68,6 +68,7 @@ Usage:
                                                Manage the skill library
   rbridge audit [--since 24h] [--json]         One line per session: profile, approvals, gaps
   rbridge daemon start|stop|status|run         Optional daemon serving IPC and local HTTP
+  rbridge mcp [--profile observe]              MCP server on stdio for other agents
 
   rbridge version [--json]                     Print version information
   rbridge help                                 Show this help
@@ -108,6 +109,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		err = cmdAudit(ctx, args[1:], env)
 	case "daemon":
 		err = cmdDaemon(ctx, args[1:], env)
+	case "mcp":
+		err = cmdMCP(ctx, args[1:], env)
 	default:
 		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q; run rbridge help", args[0])
 	}

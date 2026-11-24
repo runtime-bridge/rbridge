@@ -232,21 +232,25 @@ func TestNeverTouchesCredentialFiles(t *testing.T) {
 	}
 	fakeExe(t, filepath.Join(f.home, ".local", "bin"), "claude", `echo 2.1.331`)
 	fakeExe(t, filepath.Join(f.home, ".opencode", "bin"), "opencode", `echo 1.19.6`)
+	for _, n := range []string{"codex-acp", "gemini", "claude-agent-acp"} {
+		fakeExe(t, filepath.Join(f.home, ".local", "bin"), n, `echo 1.0.0`)
+	}
 
 	d := f.detector()
 	for _, m := range registry.BuiltIns() {
 		info := d.Detect(context.Background(), m, config.ProviderEntry{})
-		if info.Health != domain.HealthAvailable {
+		if info.Health != domain.HealthAvailable && info.Health != domain.HealthNeedsAPIKey {
 			t.Fatalf("%s: %+v", m.ID, info)
 		}
 	}
+	executables := map[string]bool{"claude": true, "opencode": true, "codex-acp": true, "gemini": true, "claude-agent-acp": true}
 	for _, p := range f.fs.paths {
 		for _, s := range secrets {
 			if strings.HasPrefix(p, filepath.Join(f.home, s)) {
 				t.Errorf("detection touched credential path %s", p)
 			}
 		}
-		if base := filepath.Base(p); base != "claude" && base != "opencode" {
+		if !executables[filepath.Base(p)] {
 			t.Errorf("detection touched a non-executable path %s", p)
 		}
 	}
@@ -285,5 +289,32 @@ func TestWindowsNames(t *testing.T) {
 	}
 	if got := d.names("tool.exe"); len(got) != 1 {
 		t.Fatalf("names with extension = %v", got)
+	}
+}
+
+func TestAPIKeyGate(t *testing.T) {
+	f := newFixture(t)
+	fakeExe(t, f.bin, "gemini", `echo 0.40.0`)
+	fakeExe(t, f.bin, "claude-agent-acp", `echo 0.9.0`)
+	d := f.detector()
+	g := registry.GeminiCLI()
+	g.Detect.KnownDirs = nil
+	c := registry.ClaudeACP()
+	c.Detect.KnownDirs = nil
+	if info := d.Detect(context.Background(), g, config.ProviderEntry{}); info.Health != domain.HealthNeedsAPIKey {
+		t.Fatalf("gemini without key: %+v", info)
+	}
+	if info := d.Detect(context.Background(), g, config.ProviderEntry{AllowAccountLogin: true}); info.Health != domain.HealthAvailable || info.AuthMode != domain.AuthSubscription {
+		t.Fatalf("gemini with account login allowed: %+v", info)
+	}
+	if info := d.Detect(context.Background(), c, config.ProviderEntry{AllowAccountLogin: true}); info.Health != domain.HealthNeedsAPIKey {
+		t.Fatalf("claude-acp must ignore allow_account_login: %+v", info)
+	}
+	f.env["ANTHROPIC_API_KEY"] = "x"
+	f.env["GEMINI_API_KEY"] = "x"
+	for _, m := range []registry.Manifest{g, c} {
+		if info := d.Detect(context.Background(), m, config.ProviderEntry{}); info.Health != domain.HealthAvailable || info.AuthMode != domain.AuthAPIKey {
+			t.Fatalf("%s with key: %+v", m.ID, info)
+		}
 	}
 }

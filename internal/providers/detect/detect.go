@@ -103,8 +103,19 @@ func (d *Detector) Detect(ctx context.Context, m registry.Manifest, entry config
 			break
 		}
 	}
+	if info.Health == domain.HealthAvailable && m.RequireAuthEnv && info.AuthMode != domain.AuthAPIKey && (m.AccountLoginForbidden || !entry.AllowAccountLogin) {
+		info.Health = domain.HealthNeedsAPIKey
+		if m.AccountLoginForbidden {
+			info.Notes = append(info.Notes, "set one of "+strings.Join(m.AuthEnv, ", ")+"; this provider cannot use an account login")
+		} else {
+			info.Notes = append(info.Notes, "set one of "+strings.Join(m.AuthEnv, ", ")+", or providers."+m.ID+".allow_account_login: true after reading the provider's terms")
+		}
+	}
+	if info.Health == domain.HealthAvailable && entry.AllowAccountLogin && info.AuthMode == domain.AuthUnknown && m.RequireAuthEnv {
+		info.AuthMode = domain.AuthSubscription
+	}
 	switch {
-	case info.Health == domain.HealthAvailable:
+	case info.Health == domain.HealthAvailable, info.Health == domain.HealthNeedsAPIKey:
 	case len(info.Installations) > 0:
 		info.Health = domain.HealthUnhealthy
 		info.Executable = info.Installations[0].Path

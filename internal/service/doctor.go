@@ -43,7 +43,13 @@ func (r Report) Failed() bool {
 var installHints = map[string]string{
 	"claude-code": "Install Claude Code (https://code.claude.com/docs), then run `claude` once to sign in.",
 	"opencode":    "Install OpenCode (https://opencode.ai/docs), then configure a model provider, for example a local Ollama server.",
+	"codex":       "Optional. Install the ACP adapter: npm install -g @agentclientprotocol/codex-acp",
+	"gemini-cli":  "Optional. Install Gemini CLI (https://www.geminicli.com) and set GEMINI_API_KEY.",
+	"claude-acp":  "Optional, API key only. Install: npm install -g @agentclientprotocol/claude-agent-acp",
 }
+
+// optional providers do not count as missing when they are not installed.
+var optionalProviders = map[string]bool{"codex": true, "gemini-cli": true, "claude-acp": true}
 
 // Doctor checks configuration, directories and providers, always re-detecting.
 func (s *Service) Doctor(ctx context.Context) Report {
@@ -96,8 +102,15 @@ func (s *Service) Doctor(ctx context.Context) Report {
 		case domain.HealthDisabled:
 			c.Status = CheckOK
 			c.Detail = "disabled in configuration"
+		case domain.HealthNeedsAPIKey:
+			c.Status = CheckWarn
+			c.Detail = fmt.Sprintf("%s %s is installed but needs an API key", st.DisplayName, orDash(rt.Version))
+			c.Fix = strings.Join(rt.Notes, "; ")
 		case domain.HealthMissing:
 			c.Status = CheckWarn
+			if optionalProviders[st.ID] {
+				c.Status = CheckOK
+			}
 			c.Detail = "not installed"
 			c.Fix = installHints[st.ID]
 			if c.Fix == "" {

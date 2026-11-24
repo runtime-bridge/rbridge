@@ -45,6 +45,11 @@ type ProviderEntry struct {
 	Integration string `yaml:"integration"`
 	// Executable pins an absolute path instead of detecting one.
 	Executable string `yaml:"executable"`
+	// Args replaces the manifest's launch arguments.
+	Args []string `yaml:"args"`
+	// AllowAccountLogin lets rbridge use a runtime whose terms make API keys
+	// the safe default, with the user's own account login instead.
+	AllowAccountLogin bool `yaml:"allow_account_login"`
 }
 
 // IsEnabled reports whether the provider is enabled; providers are enabled by default.

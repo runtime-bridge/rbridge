@@ -325,9 +325,9 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	var ps domain.ProviderSession
 	switch m.Integration {
 	case domain.IntegrationACP:
-		ps, err = acp.Open(ctx, m.Capabilities, acp.Launch{Args: m.Launch.Args, ClientName: "rbridge", ClientVersion: buildinfo.Get().Version}, opts, seq)
+		ps, err = acp.Open(ctx, m.Capabilities, acp.Launch{Args: s.launchArgs(m), ClientName: "rbridge", ClientVersion: buildinfo.Get().Version}, opts, seq)
 	case domain.IntegrationClaudeHeadless:
-		ps, err = claudeheadless.Open(ctx, m.Capabilities, m.Launch.Args, opts, seq)
+		ps, err = claudeheadless.Open(ctx, m.Capabilities, s.launchArgs(m), opts, seq)
 	default:
 		err = domain.Errorf(domain.ErrCapabilityUnavailable, "%s cannot run tasks", m.ID)
 	}
@@ -614,4 +614,12 @@ func (s *Service) DeliveryFor(id string) (string, string) {
 		return "", ""
 	}
 	return m.Skills.Strategy, m.Skills.SessionDir
+}
+
+// launchArgs returns the configured override or the manifest's arguments.
+func (s *Service) launchArgs(m registry.Manifest) []string {
+	if a := s.cfg.Providers.Settings[m.ID].Args; a != nil {
+		return a
+	}
+	return m.Launch.Args
 }

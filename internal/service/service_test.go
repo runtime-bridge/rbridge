@@ -85,7 +85,7 @@ func TestProvidersUseCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 2 || list[0].ID != "claude-code" || list[0].Runtime.Health != domain.HealthAvailable || list[0].Cached {
+	if len(list) != 5 || list[0].ID != "claude-code" || list[0].Runtime.Health != domain.HealthAvailable || list[0].Cached {
 		t.Fatalf("first run: %+v", list)
 	}
 	first := h.runs

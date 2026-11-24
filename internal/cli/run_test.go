@@ -246,3 +246,50 @@ func TestAuditCommand(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestMCPServer(t *testing.T) {
+	f := newFakeCLI(t)
+	in := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"rbridge_providers","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"rbridge_run","arguments":{"workspace":"` + f.ws + `","prompt":"via mcp","provider":"opencode"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"rbridge_run","arguments":{"workspace":"relative","prompt":"x"}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"nope"}`,
+	}, "\n") + "\n"
+	r := f.run(in, "mcp")
+	if r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	byID := map[float64]map[string]any{}
+	for _, line := range strings.Split(strings.TrimSpace(r.stdout), "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("bad line %q", line)
+		}
+		byID[m["id"].(float64)] = m
+	}
+	if v := byID[1]["result"].(map[string]any)["protocolVersion"]; v != "2025-06-18" {
+		t.Errorf("version %v", v)
+	}
+	if n := len(byID[2]["result"].(map[string]any)["tools"].([]any)); n != 3 {
+		t.Errorf("tools %d", n)
+	}
+	text := func(id float64) (string, bool) {
+		res := byID[id]["result"].(map[string]any)
+		return res["content"].([]any)[0].(map[string]any)["text"].(string), res["isError"].(bool)
+	}
+	if s, isErr := text(3); isErr || !strings.Contains(s, "opencode: available") {
+		t.Errorf("providers: %q", s)
+	}
+	if s, isErr := text(4); isErr || s != "echo: via mcp" {
+		t.Errorf("run: %q %v", s, isErr)
+	}
+	if _, isErr := text(5); !isErr {
+		t.Error("relative workspace should be a tool error")
+	}
+	if byID[6]["error"] == nil {
+		t.Error("unknown method should be a protocol error")
+	}
+}

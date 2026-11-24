@@ -68,7 +68,7 @@ func TestProvidersJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.stdout), &list); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, r.stdout)
 	}
-	if len(list) != 2 || list[1].Runtime.Version != "1.19.6" {
+	if len(list) != 5 || list[1].Runtime.Version != "1.19.6" {
 		t.Fatalf("list = %+v", list)
 	}
 }
