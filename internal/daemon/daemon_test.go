@@ -403,3 +403,18 @@ func TestSingleInstanceAndCleanShutdown(t *testing.T) {
 		t.Error("connection should fail after shutdown")
 	}
 }
+
+func TestLongRuntimeDirGetsShortSocket(t *testing.T) {
+	long := filepath.Join(t.TempDir(), strings.Repeat("deep-directory-", 8))
+	f := daemon.FilesFor(config.Paths{RuntimeDir: long})
+	if len(f.Socket) > 100 || strings.HasPrefix(f.Socket, long) {
+		t.Fatalf("socket %s (%d bytes)", f.Socket, len(f.Socket))
+	}
+	if f.Socket != daemon.FilesFor(config.Paths{RuntimeDir: long}).Socket {
+		t.Fatal("socket path must be deterministic")
+	}
+	short := daemon.FilesFor(config.Paths{RuntimeDir: "/run/user/1000/rbridge"})
+	if short.Socket != "/run/user/1000/rbridge/bridge.sock" {
+		t.Fatalf("short dir: %s", short.Socket)
+	}
+}

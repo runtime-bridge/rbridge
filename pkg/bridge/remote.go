@@ -72,7 +72,7 @@ func SocketPath(home string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return daemon.FilesFor(paths).Socket, nil
+	return daemon.SocketFor(daemon.FilesFor(paths)), nil
 }
 
 // Connect opens a connection to the daemon.

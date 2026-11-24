@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -36,10 +37,30 @@ type Files struct {
 	Dir, Socket, Token, State, Log string
 }
 
-// FilesFor returns the file locations for a runtime directory.
+// maxSocketPath stays below the smallest sun_path limit (104 bytes on macOS).
+const maxSocketPath = 100
+
+// FilesFor returns the file locations for a runtime directory. When the
+// socket path would be too long for a Unix socket, the socket goes into a
+// short private directory under the system temp dir, derived from the runtime
+// directory; daemon.json records where it is.
 func FilesFor(p config.Paths) Files {
 	d := p.RuntimeDir
-	return Files{Dir: d, Socket: filepath.Join(d, "bridge.sock"), Token: filepath.Join(d, "daemon.token"), State: filepath.Join(d, "daemon.json"), Log: filepath.Join(d, "daemon.log")}
+	sock := filepath.Join(d, "bridge.sock")
+	if len(sock) > maxSocketPath {
+		sum := sha256.Sum256([]byte(d))
+		sock = filepath.Join(os.TempDir(), fmt.Sprintf("rbridge-%d-%x", os.Getuid(), sum[:6]), "bridge.sock")
+	}
+	return Files{Dir: d, Socket: sock, Token: filepath.Join(d, "daemon.token"), State: filepath.Join(d, "daemon.json"), Log: filepath.Join(d, "daemon.log")}
+}
+
+// SocketFor returns the socket of the running daemon from daemon.json, or the
+// computed path when no daemon has written one.
+func SocketFor(f Files) string {
+	if st, err := ReadState(f); err == nil && st.Socket != "" {
+		return st.Socket
+	}
+	return f.Socket
 }
 
 // ErrAlreadyRunning means another daemon answers on the socket.
@@ -82,6 +103,15 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	_ = os.Chmod(f.Dir, 0o700)
+	if sockDir := filepath.Dir(f.Socket); sockDir != f.Dir {
+		if err := os.MkdirAll(sockDir, 0o700); err != nil {
+			return err
+		}
+		// The directory must be ours and private, or another user could take the socket.
+		if fi, err := os.Lstat(sockDir); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+			return fmt.Errorf("socket directory %s is not a private directory", sockDir)
+		}
+	}
 	if c, err := net.DialTimeout("unix", f.Socket, time.Second); err == nil {
 		c.Close()
 		return ErrAlreadyRunning
@@ -199,6 +229,9 @@ loop:
 	}
 	wg.Wait()
 	os.Remove(f.Socket)
+	if sockDir := filepath.Dir(f.Socket); sockDir != f.Dir {
+		os.Remove(sockDir)
+	}
 	os.Remove(f.State)
 	os.Remove(f.Token)
 	return runErr

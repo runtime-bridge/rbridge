@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/rbridge/rbridge/internal/daemon"
@@ -53,8 +54,17 @@ func daemonRun(ctx context.Context, env Env) error {
 	return err
 }
 
+func logTail(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "no log"
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	return lines[len(lines)-1]
+}
+
 func alive(f daemon.Files) bool {
-	c, err := net.DialTimeout("unix", f.Socket, time.Second)
+	c, err := net.DialTimeout("unix", daemon.SocketFor(f), time.Second)
 	if err != nil {
 		return false
 	}
@@ -98,7 +108,7 @@ func daemonStart(ctx context.Context, env Env) error {
 	for {
 		select {
 		case <-exited:
-			return domain.Errorf(domain.ErrExecutionFailed, "the daemon exited during start; see %s", f.Log)
+			return domain.Errorf(domain.ErrExecutionFailed, "the daemon exited during start: %s (log: %s)", logTail(f.Log), f.Log)
 		case <-deadline:
 			return domain.Errorf(domain.ErrExecutionTimeout, "the daemon did not start within 15s; see %s", f.Log)
 		case <-ctx.Done():
