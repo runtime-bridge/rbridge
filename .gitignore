@@ -1,0 +1,22 @@
+# build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# env and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# local rbridge state used while developing
+/.rbridge-home/
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
