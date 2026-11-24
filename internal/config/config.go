@@ -24,6 +24,7 @@ type Config struct {
 	Policy     PolicyConfig     `yaml:"policy"`
 	Execution  ExecutionConfig  `yaml:"execution"`
 	Audit      AuditConfig      `yaml:"audit"`
+	Daemon     DaemonConfig     `yaml:"daemon"`
 	// Locked lists dotted keys that lower layers may not change.
 	// It is only read from the system layer.
 	Locked []string `yaml:"locked"`
@@ -112,6 +113,32 @@ type AuditConfig struct {
 	Retention time.Duration `yaml:"retention"`
 }
 
+// DaemonConfig configures `rbridge daemon`.
+type DaemonConfig struct {
+	HTTP HTTPConfig `yaml:"http"`
+	IPC  struct {
+		Enabled bool `yaml:"enabled"`
+	} `yaml:"ipc"`
+	// EventBuffer is how many events per session are kept for replay.
+	EventBuffer int `yaml:"event_buffer"`
+	// RequestsPerSecond limits each client; bursts of twice the rate are allowed.
+	RequestsPerSecond float64 `yaml:"requests_per_second"`
+	// SessionIdleTimeout closes daemon sessions nobody has used for this long.
+	SessionIdleTimeout time.Duration `yaml:"session_idle_timeout"`
+}
+
+// HTTPConfig is the daemon's local HTTP listener.
+type HTTPConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Host    string `yaml:"host"`
+	Port    int    `yaml:"port"`
+	// AllowedOrigins lists browser origins that may call the API. Empty means
+	// requests carrying an Origin header are refused.
+	AllowedOrigins []string `yaml:"allowed_origins"`
+	// AllowNonLoopback must be set to listen on anything but a loopback address.
+	AllowNonLoopback bool `yaml:"allow_non_loopback"`
+}
+
 // Defaults returns the built-in configuration, the lowest layer.
 func Defaults() Config {
 	return Config{
@@ -138,6 +165,16 @@ func Defaults() Config {
 			DetectCacheTTL:        10 * time.Minute,
 		},
 		Audit: AuditConfig{Enabled: true, Level: "metadata", Retention: 30 * 24 * time.Hour},
+		Daemon: func() DaemonConfig {
+			d := DaemonConfig{
+				HTTP:               HTTPConfig{Host: "127.0.0.1", Port: 7432},
+				EventBuffer:        2000,
+				RequestsPerSecond:  20,
+				SessionIdleTimeout: 30 * time.Minute,
+			}
+			d.IPC.Enabled = true
+			return d
+		}(),
 	}
 }
 
@@ -414,6 +451,15 @@ func (c Config) Validate() error {
 	}
 	if c.Execution.MaxOutputBytes <= 0 {
 		return errors.New("execution.max_output_bytes must be positive")
+	}
+	if c.Daemon.HTTP.Port < 0 || c.Daemon.HTTP.Port > 65535 {
+		return errors.New("daemon.http.port must be 0 to 65535")
+	}
+	if c.Daemon.EventBuffer < 10 {
+		return errors.New("daemon.event_buffer must be at least 10")
+	}
+	if c.Daemon.RequestsPerSecond <= 0 {
+		return errors.New("daemon.requests_per_second must be positive")
 	}
 	if c.Skills.ProjectDir == "" || filepath.IsAbs(c.Skills.ProjectDir) {
 		return errors.New("skills.project_dir must be a relative path")

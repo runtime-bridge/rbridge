@@ -199,6 +199,10 @@ func AllowAll() RunOption {
 	return WithApprover(func(_ context.Context, r ApprovalRequest) ApprovalDecision { return r.AllowOnce("caller") })
 }
 
+// WithProfile selects the policy profile when resuming a session; for new
+// sessions set Task.Profile.
+func WithProfile(p string) RunOption { return func(o *service.RunOptions) { o.Profile = p } }
+
 // WithModel passes a model name to the runtime.
 func WithModel(m string) RunOption { return func(o *service.RunOptions) { o.Model = m } }
 
@@ -215,8 +219,39 @@ func (b *Bridge) Run(ctx context.Context, t Task, opts ...RunOption) (Result, er
 	return b.svc.Run(ctx, t, options(opts))
 }
 
+// Client is what both an embedded Bridge and a daemon connection offer, so
+// application code does not change between the two.
+type Client interface {
+	Providers(ctx context.Context, refresh bool) ([]ProviderStatus, error)
+	Run(ctx context.Context, t Task, opts ...RunOption) (Result, error)
+	Open(ctx context.Context, t Task, opts ...RunOption) (*Session, error)
+	Resume(ctx context.Context, id string, opts ...RunOption) (*Session, error)
+	Sessions(ctx context.Context) ([]SessionRecord, error)
+	Close() error
+}
+
+var _ Client = (*Bridge)(nil)
+
+type sessionImpl interface {
+	record() SessionRecord
+	capabilities() CapabilitySet
+	prompt(ctx context.Context, p []ContentBlock) (Result, error)
+	cancel(ctx context.Context) error
+	close(ctx context.Context) error
+}
+
 // Session is a multi-turn conversation with one runtime.
-type Session struct{ s *service.Session }
+type Session struct{ impl sessionImpl }
+
+type localSession struct{ s *service.Session }
+
+func (l localSession) record() SessionRecord            { return l.s.Record() }
+func (l localSession) capabilities() CapabilitySet      { return l.s.Capabilities() }
+func (l localSession) cancel(ctx context.Context) error { return l.s.Cancel(ctx) }
+func (l localSession) close(ctx context.Context) error  { return l.s.Close(ctx) }
+func (l localSession) prompt(ctx context.Context, p []ContentBlock) (Result, error) {
+	return l.s.Prompt(ctx, p)
+}
 
 // Open starts a session. Task.Prompt is not sent; call Prompt for each turn.
 func (b *Bridge) Open(ctx context.Context, t Task, opts ...RunOption) (*Session, error) {
@@ -227,7 +262,7 @@ func (b *Bridge) Open(ctx context.Context, t Task, opts ...RunOption) (*Session,
 	if err != nil {
 		return nil, err
 	}
-	return &Session{s}, nil
+	return &Session{localSession{s}}, nil
 }
 
 // Resume reopens a stored session.
@@ -236,28 +271,29 @@ func (b *Bridge) Resume(ctx context.Context, id string, opts ...RunOption) (*Ses
 	if err != nil {
 		return nil, err
 	}
-	return &Session{s}, nil
+	return &Session{localSession{s}}, nil
 }
 
 // ID is the bridge session id.
-func (s *Session) ID() string { return s.s.Record().ID }
+func (s *Session) ID() string { return s.impl.record().ID }
 
-// Record returns the stored session record.
-func (s *Session) Record() SessionRecord { return s.s.Record() }
+// Record returns the session record.
+func (s *Session) Record() SessionRecord { return s.impl.record() }
 
-// Capabilities returns what the runtime reported for this session.
-func (s *Session) Capabilities() CapabilitySet { return s.s.Capabilities() }
+// Capabilities returns what the runtime reported for this session. Sessions
+// over a daemon connection return nil.
+func (s *Session) Capabilities() CapabilitySet { return s.impl.capabilities() }
 
 // Prompt runs one turn.
 func (s *Session) Prompt(ctx context.Context, prompt []ContentBlock) (Result, error) {
-	return s.s.Prompt(ctx, prompt)
+	return s.impl.prompt(ctx, prompt)
 }
 
 // Cancel stops the current turn.
-func (s *Session) Cancel(ctx context.Context) error { return s.s.Cancel(ctx) }
+func (s *Session) Cancel(ctx context.Context) error { return s.impl.cancel(ctx) }
 
 // Close ends the session and stops the runtime.
-func (s *Session) Close(ctx context.Context) error { return s.s.Close(ctx) }
+func (s *Session) Close(ctx context.Context) error { return s.impl.close(ctx) }
 
 // Sessions lists stored sessions, newest first.
 func (b *Bridge) Sessions(ctx context.Context) ([]SessionRecord, error) { return b.svc.Sessions(ctx) }
