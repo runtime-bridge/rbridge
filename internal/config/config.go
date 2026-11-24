@@ -89,6 +89,7 @@ type ExecutionConfig struct {
 	MaxOutputBytes        int64         `yaml:"max_output_bytes"`
 	KillGracePeriod       time.Duration `yaml:"kill_grace_period"`
 	DetectTimeout         time.Duration `yaml:"detect_timeout"`
+	IdleTimeout           time.Duration `yaml:"idle_timeout"`
 	DetectCacheTTL        time.Duration `yaml:"detect_cache_ttl"`
 }
 
@@ -120,6 +121,7 @@ func Defaults() Config {
 			MaxOutputBytes:        10 << 20,
 			KillGracePeriod:       10 * time.Second,
 			DetectTimeout:         5 * time.Second,
+			IdleTimeout:           5 * time.Minute,
 			DetectCacheTTL:        10 * time.Minute,
 		},
 		Audit: AuditConfig{Enabled: true, Level: "metadata", Retention: 30 * 24 * time.Hour},
@@ -387,6 +389,7 @@ func (c Config) Validate() error {
 		"execution.command_timeout":   c.Execution.CommandTimeout,
 		"execution.kill_grace_period": c.Execution.KillGracePeriod,
 		"execution.detect_timeout":    c.Execution.DetectTimeout,
+		"execution.idle_timeout":      c.Execution.IdleTimeout,
 		"policy.approval_timeout":     c.Policy.ApprovalTimeout,
 	} {
 		if d <= 0 {

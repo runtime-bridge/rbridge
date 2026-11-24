@@ -54,16 +54,22 @@ const (
 
 // SessionRecord is what the bridge stores about a session.
 type SessionRecord struct {
-	ID         string       `json:"id"`
-	ProviderID string       `json:"provider_id"`
-	NativeID   string       `json:"native_id,omitempty"`
-	Workspace  string       `json:"workspace"`
-	Profile    string       `json:"profile,omitempty"`
-	Skills     []string     `json:"skills,omitempty"`
-	State      SessionState `json:"state"`
-	CreatedAt  time.Time    `json:"created_at"`
-	UpdatedAt  time.Time    `json:"updated_at"`
-	Client     string       `json:"client,omitempty"`
+	ID         string          `json:"id"`
+	ProviderID string          `json:"provider_id"`
+	NativeID   string          `json:"native_id,omitempty"`
+	Workspace  string          `json:"workspace"`
+	Profile    string          `json:"profile,omitempty"`
+	Model      string          `json:"model,omitempty"`
+	Skills     []SkillDelivery `json:"skills,omitempty"`
+	State      SessionState    `json:"state"`
+	Turns      int             `json:"turns"`
+	LastStop   StopReason      `json:"last_stop,omitempty"`
+	LastError  string          `json:"last_error,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+	Client     string          `json:"client,omitempty"`
+	// OwnerPID is the rbridge process that holds the runtime session.
+	OwnerPID int `json:"owner_pid,omitempty"`
 }
 
 // Usage is token and cost information when a runtime reports it.

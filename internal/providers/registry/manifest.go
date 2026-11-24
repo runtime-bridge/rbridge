@@ -56,6 +56,9 @@ type SkillDirs struct {
 	// SessionDir is a layout rbridge can create for one session and hand to
 	// the runtime, relative to that directory. Empty when unsupported.
 	SessionDir string
+	// Strategy is the per-session delivery method (see package deliver).
+	// Empty means the runtime cannot be given skills for one session.
+	Strategy string
 }
 
 func caps(src domain.CapabilitySource, entries map[domain.CapabilityName]domain.Capability) domain.CapabilitySet {
@@ -103,6 +106,7 @@ func ClaudeCode() Manifest {
 			Project:    []string{".claude/skills"},
 			User:       []string{"$CLAUDE_CONFIG_DIR/skills|~/.claude/skills"},
 			SessionDir: ".claude/skills",
+			Strategy:   "session-dir",
 		},
 		Capabilities: caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
 			domain.CapStreaming:          yes("stream-json"),
@@ -150,8 +154,9 @@ func OpenCode() Manifest {
 			EnvPassthrough: []string{"OLLAMA_HOST", "OPENCODE_CONFIG", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"},
 		},
 		Skills: SkillDirs{
-			Project: []string{".opencode/skills", ".agents/skills", ".claude/skills"},
-			User:    []string{"~/.config/opencode/skills", "~/.agents/skills", "~/.claude/skills"},
+			Project:  []string{".opencode/skills", ".agents/skills", ".claude/skills"},
+			User:     []string{"~/.config/opencode/skills", "~/.agents/skills", "~/.claude/skills"},
+			Strategy: "opencode-config",
 		},
 		Capabilities: caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
 			domain.CapStreaming:          yes("acp session/update"),

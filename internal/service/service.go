@@ -18,6 +18,8 @@ import (
 	"github.com/rbridge/rbridge/internal/process"
 	"github.com/rbridge/rbridge/internal/providers/detect"
 	"github.com/rbridge/rbridge/internal/providers/registry"
+	skillreg "github.com/rbridge/rbridge/internal/skills/registry"
+	"github.com/rbridge/rbridge/internal/skills/spec"
 	"github.com/rbridge/rbridge/internal/store"
 )
 
@@ -30,7 +32,9 @@ type Service struct {
 	detector *detect.Detector
 	store    store.Store
 	getenv   func(string) string
+	environ  func() []string
 	now      func() time.Time
+	slots    chan struct{}
 }
 
 // Options wires a Service. Fields left empty get working defaults.
@@ -41,6 +45,7 @@ type Options struct {
 	Store    store.Store
 	Detector *detect.Detector
 	Getenv   func(string) string
+	Environ  func() []string
 	Now      func() time.Time
 }
 
@@ -56,8 +61,11 @@ func New(o Options) (*Service, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
+	if o.Environ == nil {
+		o.Environ = os.Environ
+	}
 	if o.Store == nil {
-		st, err := store.NewJSONStore(o.Paths.CacheDir)
+		st, err := store.NewJSONStore(o.Paths.DataDir)
 		if err != nil {
 			return nil, err
 		}
@@ -68,7 +76,8 @@ func New(o Options) (*Service, error) {
 	}
 	return &Service{
 		paths: o.Paths, cfg: o.Config, layers: o.Layers, registry: reg,
-		detector: o.Detector, store: o.Store, getenv: o.Getenv, now: o.Now,
+		detector: o.Detector, store: o.Store, getenv: o.Getenv, environ: o.Environ, now: o.Now,
+		slots: make(chan struct{}, max(1, o.Config.Execution.MaxConcurrentSessions)),
 	}, nil
 }
 
@@ -99,7 +108,19 @@ func FromEnvironment(e Environment) (*Service, error) {
 		EnvAllowlist: cfg.Policy.EnvAllowlist,
 		Timeout:      cfg.Execution.DetectTimeout,
 	}
-	return New(Options{Paths: paths, Config: cfg, Layers: layers, Detector: det, Getenv: e.Env.Getenv})
+	st, err := store.NewJSONStore(paths.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	return New(Options{Paths: paths, Config: cfg, Layers: layers, Store: st, Detector: det, Getenv: e.Env.Getenv, Environ: e.Environ})
+}
+
+// Skills returns the skill library.
+func (s *Service) Skills() *skillreg.Registry {
+	return &skillreg.Registry{
+		Dir: filepath.Join(s.paths.DataDir, "skills"), Store: s.store, Limits: spec.DefaultLimits,
+		Now: func() time.Time { return s.now().UTC() }, RequirePinned: s.cfg.Skills.GitRequirePinnedRevision,
+	}
 }
 
 // Paths returns the resolved directories.
@@ -200,6 +221,10 @@ func (s *Service) status(ctx context.Context, m registry.Manifest, refresh bool)
 	}
 	if !cached {
 		info = s.detector.Detect(ctx, m, entry)
+		if err := ctx.Err(); err != nil {
+			// A cancelled detection says nothing about the runtime; do not report or cache it.
+			return ProviderStatus{}, &domain.Error{Code: domain.ErrCancelled, Message: "detection cancelled", Provider: m.ID, Cause: err}
+		}
 		if s.cfg.Execution.DetectCacheTTL > 0 {
 			// A cache write failure only costs a re-detection next time.
 			_ = s.store.Put(ctx, detectCollection, m.ID, cachedDetection{Fingerprint: fp, Info: info})
