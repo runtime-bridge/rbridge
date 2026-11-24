@@ -1,0 +1,330 @@
+openapi: 3.1.0
+info:
+  title: rbridge daemon HTTP API
+  version: "1"
+  description: |
+    Local HTTP API of `rbridge daemon`. It listens on 127.0.0.1 only unless
+    daemon.http.allow_non_loopback is set.
+
+    Every request except GET /v1/health needs `Authorization: Bearer <token>`,
+    where the token is the content of daemon.token in the daemon's runtime
+    directory (rewritten at each start, mode 0600).
+
+    `X-Rbridge-Client` names the calling application (default "default").
+    Sessions are visible only to the client that opened them.
+
+    Requests with an Origin header are refused unless the origin is listed in
+    daemon.http.allowed_origins. A Host header that is not a loopback name is
+    refused with 421. Bodies are limited to 1 MiB. Each client is rate limited.
+
+    Errors use the body `{"error": {"code", "message", "details"}}`; `code` is
+    one of rbridge's stable error codes.
+servers:
+  - url: http://127.0.0.1:7432
+security:
+  - token: []
+components:
+  securitySchemes:
+    token:
+      type: http
+      scheme: bearer
+  parameters:
+    client:
+      name: X-Rbridge-Client
+      in: header
+      schema: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, examples: [session_not_found] }
+            message: { type: string }
+            details: { type: object, additionalProperties: { type: string } }
+    ContentBlock:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [text, image, resource_link] }
+        text: { type: string }
+        uri: { type: string }
+        mime_type: { type: string }
+        data: { type: string, description: base64 for images }
+    Prompt:
+      oneOf:
+        - type: string
+        - type: array
+          items: { $ref: "#/components/schemas/ContentBlock" }
+    Task:
+      type: object
+      required: [workspace]
+      properties:
+        workspace: { type: string, description: absolute path }
+        prompt: { type: array, items: { $ref: "#/components/schemas/ContentBlock" } }
+        skills: { type: array, items: { type: string } }
+        provider: { type: string }
+        requirements: { type: array, items: { type: string } }
+        profile: { type: string, enum: [observe, standard, controlled, custom] }
+        mcp_servers: { type: array, items: { type: object } }
+        output_schema: { type: object }
+        timeout: { type: integer, description: nanoseconds }
+    SessionRecord:
+      type: object
+      properties:
+        id: { type: string }
+        provider_id: { type: string }
+        native_id: { type: string }
+        workspace: { type: string }
+        profile: { type: string }
+        state: { type: string, enum: [created, starting, ready, running, awaiting_approval, cancelling, closed, failed, interrupted] }
+        turns: { type: integer }
+        last_stop: { type: string }
+        last_error: { type: string }
+        skills: { type: array, items: { type: object } }
+        unenforced: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Result:
+      type: object
+      properties:
+        session_id: { type: string }
+        stop_reason: { type: string, enum: [end_turn, max_tokens, max_turn_requests, refusal, cancelled] }
+        output: { type: string }
+        structured: {}
+        usage: { type: object }
+        provider: { type: string }
+        skills: { type: array, items: { type: object } }
+    Event:
+      type: object
+      properties:
+        seq: { type: integer }
+        time: { type: string, format: date-time }
+        session_id: { type: string }
+        turn_id: { type: string }
+        type:
+          type: string
+          enum: [session.started, skill.delivered, turn.started, message.delta, thought.delta, plan.updated, tool.started, tool.updated, approval.required, approval.resolved, usage.updated, notice, turn.completed, turn.failed, session.closed]
+        data: {}
+        provider: { type: string }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+paths:
+  /v1/health:
+    get:
+      security: []
+      summary: Liveness check, no token needed
+      responses:
+        "200": { description: OK }
+  /v1/status:
+    get:
+      summary: Daemon version, pid and open session count
+      responses:
+        "200": { description: Status }
+  /v1/providers:
+    get:
+      summary: List providers; `?refresh=true` detects again
+      responses:
+        "200": { description: Provider status list }
+  /v1/providers/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: One provider
+      responses:
+        "200": { description: Provider status }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/skills:
+    get:
+      summary: List skills
+      responses:
+        "200": { description: Skill records }
+    post:
+      summary: Add a skill from an absolute local path or a pinned Git source
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path: { type: string }
+                link: { type: boolean }
+                url: { type: string }
+                rev: { type: string }
+                subdir: { type: string }
+      responses:
+        "201": { description: Added; trust starts as unreviewed }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/skills/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: One skill
+      responses:
+        "200": { description: Skill record }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Remove a skill
+      responses:
+        "200": { description: Removed }
+  /v1/skills/{id}/trust:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      summary: Change trust
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trust]
+              properties:
+                trust: { type: string, enum: [unreviewed, reviewed, trusted, restricted, blocked] }
+      responses:
+        "200": { description: Updated record }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/sessions:
+    parameters: [{ $ref: "#/components/parameters/client" }]
+    get:
+      summary: This client's sessions, newest first
+      responses:
+        "200":
+          description: Records
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SessionRecord" } }
+    post:
+      summary: Open a session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task]
+              properties:
+                task: { $ref: "#/components/schemas/Task" }
+                model: { type: string }
+      responses:
+        "201":
+          description: Session record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionRecord" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/sessions/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    get:
+      summary: Session record
+      responses:
+        "200": { description: Record }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Close the session and stop the runtime
+      responses:
+        "200": { description: Closed }
+  /v1/sessions/{id}/resume:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    post:
+      summary: Reopen a stored session
+      responses:
+        "200": { description: Session record }
+  /v1/sessions/{id}/turns:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    post:
+      summary: Send a turn
+      description: With `wait` true (default) the response is the result. With `wait` false the call returns at once and the outcome arrives as events.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { $ref: "#/components/schemas/Prompt" }
+                wait: { type: boolean, default: true }
+      responses:
+        "200":
+          description: "Result, or {\"started\": true} when wait is false"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Result" }
+  /v1/sessions/{id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    post:
+      summary: Cancel the running turn
+      responses:
+        "200": { description: Cancel sent }
+  /v1/sessions/{id}/events:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/client" }
+      - { name: after, in: query, schema: { type: integer }, description: replay events after this sequence number }
+      - { name: Last-Event-ID, in: header, schema: { type: string } }
+    get:
+      summary: Server-Sent Events stream
+      description: 'Each message has `id` (sequence number), `event` (type) and `data` (an Event). Buffered events after the given sequence number are sent first. The stream ends with `event: end` when the session closes. A comment line is sent every 15 seconds.'
+      responses:
+        "200":
+          description: text/event-stream
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/Event" }
+  /v1/sessions/{id}/approvals:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    get:
+      summary: Approvals waiting for an answer
+      responses:
+        "200": { description: Approval requests }
+  /v1/sessions/{session_id}/approvals/{approval_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string } }
+      - { name: approval_id, in: path, required: true, schema: { type: string } }
+      - { $ref: "#/components/parameters/client" }
+    post:
+      summary: Answer an approval.required event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allow: { type: boolean }
+                option_id: { type: string, description: one of the request's option ids; overrides allow }
+      responses:
+        "200": { description: Answered }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/run:
+    parameters: [{ $ref: "#/components/parameters/client" }]
+    post:
+      summary: Open a session, run one turn, close it
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task]
+              properties:
+                task: { $ref: "#/components/schemas/Task" }
+                model: { type: string }
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Result" }
+  /v1/audit:
+    get:
+      summary: Audit records since an RFC 3339 time
+      parameters:
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: Records }

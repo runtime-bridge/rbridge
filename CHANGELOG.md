@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.0 (unreleased)
+
+- `rbridge daemon start|stop|status|run`: one daemon for several applications.
+- IPC over a Unix domain socket (JSON-RPC, `specs/ipc-protocol.md`) and optional local HTTP with Server-Sent Events (`specs/http-api.yaml`).
+- Per-client session ownership, event replay, approvals answered by the client that owns the session.
+- `bridge.Connect` and the `bridge.Client` interface shared with the embedded `Bridge`.
+- Sessions idle for `daemon.session_idle_timeout` are closed; sessions left by a crash show as interrupted.
+
 ## v0.1.0 (unreleased)
 
 First release: the CLI and the Go library.

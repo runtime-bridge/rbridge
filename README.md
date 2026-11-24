@@ -16,7 +16,9 @@ Early development, not tagged yet. What works today:
 
 - Policy profiles decide what a runtime may do, and `rbridge audit` keeps one record per session.
 
-A daemon with HTTP and IPC and more runtimes come next. See the roadmap below.
+- `rbridge daemon` serves several applications over a local socket and, if enabled, local HTTP.
+
+More runtimes and SDKs for other languages come next. See the roadmap below.
 
 ## Install
 
@@ -102,6 +104,26 @@ res, err := b.Run(ctx, bridge.Task{
 
 `bridge.Open` starts a multi-turn session; `WithApprover` decides permission requests (the default denies them).
 
+### Daemon
+
+Several applications can share one rbridge through an optional daemon:
+
+```sh
+$ rbridge daemon start      # IPC socket on; set daemon.http.enabled for local HTTP
+$ rbridge daemon status
+$ rbridge daemon stop
+```
+
+From Go, `bridge.Connect` returns a client with the same methods as the embedded `Bridge`, so moving between the two is a one-line change:
+
+```go
+var c bridge.Client
+c, err := bridge.Connect(ctx, bridge.ConnectOptions{Client: "my-app"})
+res, err := c.Run(ctx, task, bridge.WithApprover(decide))
+```
+
+The HTTP API listens on 127.0.0.1 only, needs the token from `daemon.token` in the runtime directory, refuses browser origins that are not listed in `daemon.http.allowed_origins`, and streams events as Server-Sent Events with replay. Each application names itself with `X-Rbridge-Client` (HTTP) or in `initialize` (IPC) and sees only its own sessions. See `specs/http-api.yaml` and `specs/ipc-protocol.md`.
+
 ## Supported runtimes
 
 | Runtime | How rbridge talks to it | Notes |
@@ -169,7 +191,7 @@ go test -tags integration -v -timeout 60m ./tests/integration/
 2. Running tasks and sessions on Claude Code and OpenCode, streamed events, cancel, Go library (done)
 3. Skills: validation, digests, trust states, delivery to each runtime (done)
 4. Policy profiles and an audit log; first tagged release (done, not yet tagged)
-5. Optional daemon with HTTP and IPC
+5. Optional daemon with HTTP and IPC (done, not yet tagged)
 6. More runtimes (Gemini CLI, Codex) and SDKs for other languages
 
 ## License

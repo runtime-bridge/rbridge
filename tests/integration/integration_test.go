@@ -21,6 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rbridge/rbridge/internal/config"
+	"github.com/rbridge/rbridge/internal/daemon"
+	"github.com/rbridge/rbridge/internal/service"
 	"github.com/rbridge/rbridge/pkg/bridge"
 )
 
@@ -256,4 +259,57 @@ func writeReport(t *testing.T, rows []compat) {
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Error(err)
 	}
+}
+
+func TestDaemonRealRun(t *testing.T) {
+	home := t.TempDir()
+	b := newBridgeAt(t, home)
+	requireAvailable(t, b, providers()[0])
+	p := providers()[0]
+	vars := func(k string) string {
+		if k == "RBRIDGE_HOME" {
+			return home
+		}
+		return os.Getenv(k)
+	}
+	h, _ := os.UserHomeDir()
+	svc, err := service.FromEnvironment(service.Environment{Env: config.Env{GOOS: runtime.GOOS, Getenv: vars, HomeDir: h, UID: os.Getuid()}, Environ: os.Environ})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := daemon.FilesFor(svc.Paths())
+	short, _ := os.MkdirTemp("", "rbi")
+	defer os.RemoveAll(short)
+	files.Dir, files.Socket, files.State, files.Token = short, filepath.Join(short, "s.sock"), filepath.Join(short, "d.json"), filepath.Join(short, "t")
+	ctx, cancel := context.WithCancel(context.Background())
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- daemon.Run(ctx, daemon.Options{Service: svc, Config: svc.Config(), Files: files, Ready: func(daemon.State) { close(ready) }})
+	}()
+	defer func() { cancel(); <-done }()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatal(err)
+	}
+	c, err := bridge.Connect(context.Background(), bridge.ConnectOptions{Socket: files.Socket, Client: "it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer rcancel()
+	res, err := c.Run(rctx, bridge.Task{Workspace: sampleProject(t), Prompt: bridge.Text("Reply with exactly the word: pong"), Provider: p}, opts(p)...)
+	if err != nil || !strings.Contains(strings.ToLower(res.Output), "pong") {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+func newBridgeAt(t *testing.T, home string) *bridge.Bridge {
+	b, err := bridge.New(context.Background(), bridge.Options{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
