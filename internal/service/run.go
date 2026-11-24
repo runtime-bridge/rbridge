@@ -223,7 +223,9 @@ func (s *Service) ResumeSession(ctx context.Context, id string, ro RunOptions) (
 	if !ok {
 		return nil, domain.Errorf(domain.ErrProviderNotFound, "provider %s is no longer configured", rec.ProviderID)
 	}
-	if m.Capabilities.Get(domain.CapSessionsResume).Supported != domain.SupportYes && m.Capabilities.Get(domain.CapSessionsLoad).Supported != domain.SupportYes {
+	// Unknown capabilities are tried: the handshake decides, and the adapter
+	// reports capability_unavailable if the runtime cannot resume.
+	if m.Capabilities.Get(domain.CapSessionsResume).Supported == domain.SupportNo && m.Capabilities.Get(domain.CapSessionsLoad).Supported == domain.SupportNo {
 		return nil, domain.Errorf(domain.ErrCapabilityUnavailable, "%s cannot resume sessions", m.ID)
 	}
 	st, err := s.status(ctx, m, false)
