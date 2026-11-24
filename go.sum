@@ -1,2 +1,4 @@
+github.com/coder/acp-go-sdk v0.20.0 h1:nrDOWYLy7a32ZNi6OYqw1oDhr5j34pfKPXmGoxYlvBc=
+github.com/coder/acp-go-sdk v0.20.0/go.mod h1:yKzM/3R9uELp4+nBAwwtkS0aN1FOFjo11CNPy37yFko=
 go.yaml.in/yaml/v3 v3.0.6 h1:zcDfvjXEqTQmpjniUBLc91xYJMB2c4QOFxEF/LCEckM=
 go.yaml.in/yaml/v3 v3.0.6/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=

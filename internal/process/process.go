@@ -161,6 +161,13 @@ func StopTree(cmd *exec.Cmd, done <-chan error, grace time.Duration) error {
 	return <-done
 }
 
+// KillGroup kills whatever is left of the process tree after the leader exited.
+func KillGroup(cmd *exec.Cmd) {
+	if cmd.Process != nil {
+		killTree(cmd)
+	}
+}
+
 // capped is a buffer that keeps at most max bytes.
 type capped struct {
 	mu        sync.Mutex
