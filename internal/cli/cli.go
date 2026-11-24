@@ -60,11 +60,13 @@ Usage:
   rbridge run [flags] "<prompt>"               Run one task and print the answer
   rbridge chat [flags] ["<first prompt>"]      Talk to a runtime in a session
       --workspace DIR   --provider ID   --skill ID   --require CAP   --model NAME
-      --approve ask|allow|deny   --timeout 10m   --schema FILE   --json   --quiet
+      --profile observe|standard|controlled|custom   --approve ask|allow|deny
+      --timeout 10m   --schema FILE   --json   --quiet
 
   rbridge sessions [list|show|resume|cancel]   Manage sessions
   rbridge skills list|add|show|trust|verify|remove|deliver
                                                Manage the skill library
+  rbridge audit [--since 24h] [--json]         One line per session: profile, approvals, gaps
 
   rbridge version [--json]                     Print version information
   rbridge help                                 Show this help
@@ -101,6 +103,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		err = cmdSessions(ctx, args[1:], env)
 	case "skills":
 		err = cmdSkills(ctx, args[1:], env)
+	case "audit":
+		err = cmdAudit(ctx, args[1:], env)
 	default:
 		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q; run rbridge help", args[0])
 	}

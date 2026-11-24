@@ -33,6 +33,7 @@ func (l *listFlag) Set(v string) error {
 type taskFlags struct {
 	workspace string
 	provider  string
+	profile   string
 	model     string
 	approve   string
 	schema    string
@@ -47,6 +48,7 @@ func (f *taskFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.workspace, "workspace", "", "project directory the runtime works in (default: current directory)")
 	fs.StringVar(&f.provider, "provider", "", "provider id; default is the first available one that meets the requirements")
 	fs.StringVar(&f.model, "model", "", "model name passed to the runtime")
+	fs.StringVar(&f.profile, "profile", "", "policy profile: observe, standard, controlled or custom (default from config)")
 	fs.StringVar(&f.approve, "approve", "", "how to answer permission requests: ask, allow or deny (default ask on a terminal, otherwise deny)")
 	fs.StringVar(&f.schema, "schema", "", "JSON schema file for structured output")
 	fs.DurationVar(&f.timeout, "timeout", 0, "task timeout (default from config)")
@@ -65,7 +67,7 @@ func (f *taskFlags) task(env Env, prompt string) (domain.Task, error) {
 	if err != nil {
 		return domain.Task{}, err
 	}
-	t := domain.Task{Workspace: ws, Prompt: domain.Text(prompt), Skills: f.skills, Provider: f.provider, Timeout: f.timeout}
+	t := domain.Task{Workspace: ws, Prompt: domain.Text(prompt), Skills: f.skills, Provider: f.provider, Timeout: f.timeout, Profile: f.profile}
 	for _, r := range f.requires {
 		t.Requirements = append(t.Requirements, domain.CapabilityName(r))
 	}

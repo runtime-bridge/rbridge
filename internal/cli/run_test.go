@@ -111,20 +111,20 @@ func TestRunJSON(t *testing.T) {
 func TestRunApprovals(t *testing.T) {
 	f := newFakeCLI(t)
 	f.vars["RBRIDGE_FAKE_CLAUDE_SCENARIO"] = "permission"
-	r := f.run("", "run", "--quiet", "--provider", "claude-code", "write")
+	r := f.run("", "run", "--profile", "controlled", "--quiet", "--provider", "claude-code", "write")
 	if strings.TrimSpace(r.stdout) != "denied" {
 		t.Fatalf("non-interactive default must deny: %+v", r)
 	}
-	r = f.run("", "run", "--approve", "allow", "--quiet", "--provider", "claude-code", "write")
+	r = f.run("", "run", "--profile", "controlled", "--approve", "allow", "--quiet", "--provider", "claude-code", "write")
 	if strings.TrimSpace(r.stdout) != "allowed" {
 		t.Fatalf("allow: %+v", r)
 	}
 	os.Remove(filepath.Join(f.ws, "notes.txt"))
-	r = f.run("y\n", "run", "--approve", "ask", "--quiet", "--provider", "claude-code", "write")
+	r = f.run("y\n", "run", "--profile", "controlled", "--approve", "ask", "--quiet", "--provider", "claude-code", "write")
 	if strings.TrimSpace(r.stdout) != "allowed" || !strings.Contains(r.stderr, "allow?") {
 		t.Fatalf("ask yes: %+v", r)
 	}
-	r = f.run("n\n", "run", "--approve", "ask", "--quiet", "--provider", "claude-code", "write")
+	r = f.run("n\n", "run", "--profile", "controlled", "--approve", "ask", "--quiet", "--provider", "claude-code", "write")
 	if strings.TrimSpace(r.stdout) != "denied" {
 		t.Fatalf("ask no: %+v", r)
 	}
@@ -225,6 +225,24 @@ func TestAddWithTrust(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	if r := f.run("", "skills", "list", "--json"); !strings.Contains(r.stdout, `"trust": "trusted"`) {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestAuditCommand(t *testing.T) {
+	f := newFakeCLI(t)
+	f.vars["RBRIDGE_FAKE_CLAUDE_SCENARIO"] = "permission"
+	if r := f.run("", "run", "--profile", "observe", "--quiet", "--provider", "claude-code", "x"); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	r := f.run("", "audit")
+	if r.code != 0 || !strings.Contains(r.stdout, "observe") || !strings.Contains(r.stdout, "0 allowed, 1 denied") || !strings.Contains(r.stdout, "network") {
+		t.Fatalf("%+v", r)
+	}
+	if r := f.run("", "audit", "--since", "2000-01-01", "--json"); !strings.Contains(r.stdout, `"profile": "observe"`) {
+		t.Fatalf("%+v", r)
+	}
+	if r := f.run("", "audit", "--since", "yesterday"); r.code != 2 {
 		t.Fatalf("%+v", r)
 	}
 }

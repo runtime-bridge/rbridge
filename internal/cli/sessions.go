@@ -124,7 +124,7 @@ func sessionsResume(ctx context.Context, args []string, env Env) error {
 		return err
 	}
 	pr := &printer{env: env, asJSON: tf.asJSON, quiet: tf.quiet}
-	sess, err := svc.ResumeSession(ctx, pos[0], service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Client: "cli"})
+	sess, err := svc.ResumeSession(ctx, pos[0], service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Profile: tf.profile, Client: "cli"})
 	if err != nil {
 		return err
 	}

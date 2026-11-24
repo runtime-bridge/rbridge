@@ -14,7 +14,9 @@ Early development, not tagged yet. What works today:
 - `rbridge sessions` lists, shows, resumes and cancels sessions.
 - `github.com/rbridge/rbridge/pkg/bridge` does the same from Go code, in your own process.
 
-Policy profiles, an audit log, a daemon with HTTP and IPC, and more runtimes come next. See the roadmap below.
+- Policy profiles decide what a runtime may do, and `rbridge audit` keeps one record per session.
+
+A daemon with HTTP and IPC and more runtimes come next. See the roadmap below.
 
 ## Install
 
@@ -68,6 +70,21 @@ Skills use the [Agent Skills](https://agentskills.io/specification) format uncha
 | blocked | no | no |
 
 For Claude Code, skills go into a per-session directory passed with `--add-dir`. For OpenCode, rbridge writes a per-session config file listing the skills and passes it with `OPENCODE_CONFIG`, which OpenCode merges with your own configuration. Either way the directory is removed when the session ends. Git sources must be pinned to a commit: `rbridge skills add https://github.com/org/skills --rev <commit> --subdir security-audit`.
+
+### Policy and audit
+
+Every task runs under a profile (`--profile`, default `standard`):
+
+| Profile | Reads | Edits in the workspace | Commands, fetches, deletes |
+|---|---|---|---|
+| observe | allowed | denied | denied |
+| standard | allowed | allowed | asked |
+| controlled | allowed | asked | asked |
+| custom | from `policy.custom.rules` in config | | |
+
+Writes outside the workspace are always denied, delivered skills are read-only, and a reviewed skill's scripts are asked about each time. With `observe`, Claude Code also has its write, shell and web tools removed. A request that nobody answers within `policy.approval_timeout` is denied.
+
+rbridge does not sandbox the runtime. Each session starts with a notice saying which controls rbridge enforces, which rely on the runtime asking permission, and which are not enforced (network is never enforced). Set `policy.require_enforced: [network]` to refuse tasks whose profile wants something rbridge cannot enforce. `rbridge audit` lists one record per session: profile, approvals and gaps, with no prompts or outputs.
 
 ### Go
 
@@ -151,7 +168,7 @@ go test -tags integration -v -timeout 60m ./tests/integration/
 1. Core: detection, configuration, CLI (done)
 2. Running tasks and sessions on Claude Code and OpenCode, streamed events, cancel, Go library (done)
 3. Skills: validation, digests, trust states, delivery to each runtime (done)
-4. Policy profiles and an audit log; first tagged release
+4. Policy profiles and an audit log; first tagged release (done, not yet tagged)
 5. Optional daemon with HTTP and IPC
 6. More runtimes (Gemini CLI, Codex) and SDKs for other languages
 
