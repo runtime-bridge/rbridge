@@ -131,9 +131,9 @@ func (p *printer) Emit(e domain.Event) {
 	case domain.EventSkillDelivered:
 		var d domain.SkillDeliveredData
 		json.Unmarshal(e.Data, &d)
-		scripts := "with scripts"
+		scripts := "scripts allowed"
 		if !d.Scripts {
-			scripts = "without scripts"
+			scripts = "scripts withheld"
 		}
 		p.line("[skill] %s delivered (%s, %s)", d.SkillID, d.Mode, scripts)
 	case domain.EventSessionStarted:

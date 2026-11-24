@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rbridge/rbridge/internal/config"
 	"github.com/rbridge/rbridge/internal/domain"
 	"github.com/rbridge/rbridge/internal/providers/fakeacp"
 	"github.com/rbridge/rbridge/internal/providers/fakeclaude"
@@ -198,5 +199,24 @@ func TestApprovalEventsOnlyWhenAsking(t *testing.T) {
 			t.Errorf("%s: want one approval.resolved", c.profile)
 		}
 		os.Remove(filepath.Join(h.workspace(), "notes.txt"))
+	}
+}
+
+func TestDefaultModelFromConfig(t *testing.T) {
+	h := newRunHarness(t)
+	argsFile := filepath.Join(h.home, "args")
+	h.env[fakeclaude.EnvArgsFile] = argsFile
+	h.cfg.Policy.EnvAllowlist = append(h.cfg.Policy.EnvAllowlist, fakeclaude.EnvArgsFile)
+	h.cfg.Providers.Settings["claude-code"] = config.ProviderEntry{Model: "haiku"}
+	res, err := h.svc().Run(context.Background(), domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "claude-code"}, RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(argsFile)
+	if !strings.Contains(string(b), "--model\nhaiku") {
+		t.Fatalf("model not passed: %s", b)
+	}
+	if rec, _ := h.svc().SessionRecord(context.Background(), res.SessionID); rec.Model != "haiku" {
+		t.Fatalf("record model %q", rec.Model)
 	}
 }

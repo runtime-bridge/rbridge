@@ -293,3 +293,15 @@ func TestMCPServer(t *testing.T) {
 		t.Error("unknown method should be a protocol error")
 	}
 }
+
+func TestConfigCommand(t *testing.T) {
+	f := newFakeCLI(t)
+	r := f.run("", "config")
+	if r.code != 0 || !strings.Contains(r.stdout, "#   user     loaded") || !strings.Contains(r.stdout, "env_allowlist:") {
+		t.Fatalf("%+v", r)
+	}
+	r = f.run("", "config", "--defaults")
+	if r.code != 0 || strings.Contains(r.stdout, "# layers") || !strings.Contains(r.stdout, "default_profile: standard") {
+		t.Fatalf("%+v", r)
+	}
+}

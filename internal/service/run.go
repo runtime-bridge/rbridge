@@ -320,6 +320,10 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		KillGrace: s.cfg.Execution.KillGracePeriod, ScratchDir: scratch,
 		ClientFSWrite: prof.ClientFSWrite, FSGate: g.FS, DisallowedTools: prof.ClaudeDisallowed,
 	}
+	if opts.Model == "" {
+		opts.Model = s.cfg.Providers.Settings[m.ID].Model
+		rec.Model = opts.Model
+	}
 	rec.State = domain.StateStarting
 	_ = s.store.Put(ctx, sessionCollection, rec.ID, rec)
 	persisted = true

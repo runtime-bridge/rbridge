@@ -56,6 +56,7 @@ Usage:
   rbridge providers [--refresh] [--json]       List runtimes and their status
   rbridge providers show <id>                  Capabilities, skill locations and limits
   rbridge doctor [--json]                      Check configuration, directories and runtimes
+  rbridge config [--defaults]                  Print the effective configuration and its layers
 
   rbridge run [flags] "<prompt>"               Run one task and print the answer
   rbridge chat [flags] ["<first prompt>"]      Talk to a runtime in a session
@@ -111,6 +112,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		err = cmdDaemon(ctx, args[1:], env)
 	case "mcp":
 		err = cmdMCP(ctx, args[1:], env)
+	case "config":
+		err = cmdConfig(ctx, args[1:], env)
 	default:
 		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q; run rbridge help", args[0])
 	}

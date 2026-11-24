@@ -47,6 +47,8 @@ type ProviderEntry struct {
 	Executable string `yaml:"executable"`
 	// Args replaces the manifest's launch arguments.
 	Args []string `yaml:"args"`
+	// Model is used when a task does not choose one.
+	Model string `yaml:"model"`
 	// AllowAccountLogin lets rbridge use a runtime whose terms make API keys
 	// the safe default, with the user's own account login instead.
 	AllowAccountLogin bool `yaml:"allow_account_login"`
@@ -71,6 +73,9 @@ type LaunchConfig struct {
 	EnvPassthrough []string `yaml:"env_passthrough"`
 }
 
+// ResolutionConfig is reserved for fallback rules between providers. Neither
+// key changes behaviour yet: rbridge picks the first available provider that
+// meets the task's requirements, and never replaces a provider the task names.
 type ResolutionConfig struct {
 	Fallback                string `yaml:"fallback"`
 	AllowBillingClassChange bool   `yaml:"allow_billing_class_change"`
