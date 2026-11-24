@@ -3,7 +3,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/rbridge/rbridge/internal/buildinfo.Version=$(VERSION)
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: all build fakeagent test race cover vet fmt fmt-check staticcheck lint licenses cross bench clean
+.PHONY: all build fakeagent test race cover vet fmt fmt-check staticcheck lint licenses cross bench compat clean
 
 all: lint test build
 
@@ -46,6 +46,12 @@ cross:
 		echo "building $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags '$(LDFLAGS)' -o bin/rbridge-$$os-$$arch$$ext ./cmd/rbridge || exit 1; \
 	done
+
+bench:
+	go test -run '^$$' -bench . -benchtime 2s ./internal/service/ ./internal/skills/spec/ ./internal/providers/acp/
+
+compat:
+	RBRIDGE_IT_REPORT=$(CURDIR)/docs/compatibility-run.md go test -tags integration -count=1 -v -timeout 60m ./tests/integration/
 
 clean:
 	rm -rf bin coverage.out

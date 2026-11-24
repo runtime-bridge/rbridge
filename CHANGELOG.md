@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.0 (unreleased)
+
+- More providers over ACP: Codex (codex-acp), Gemini CLI and the Claude ACP adapter. Providers whose terms rule out using an account login from another tool need an API key; detection reports `needs-api-key` until one is set.
+- Any ACP agent can be added through `providers.custom` alone; it passes the same contract suite as the built-in adapters.
+- `rbridge mcp`: rbridge as an MCP server for other agents.
+- `rbridge config` prints the effective configuration and its layers; `providers.<id>.model` sets a default model and `providers.<id>.args` replaces launch arguments.
+- SDKs: `@rbridge/sdk` for Node.js and `rbridge` for Python, both without dependencies.
+- Install script that verifies checksums and, when cosign is present, signatures.
+- Docs: getting started, configuration reference, threat model, performance, releasing.
+- The daemon moves its socket to a short temp path when the runtime directory is too deep for a Unix socket; clients find it through `daemon.json`.
+
 ## v0.2.0 (unreleased)
 
 - `rbridge daemon start|stop|status|run`: one daemon for several applications.

@@ -140,3 +140,21 @@ func TestMCPServerValidation(t *testing.T) {
 		t.Fatalf("relative MCP command: %v", err)
 	}
 }
+
+// BenchmarkOpenAndTurn measures starting an ACP agent, the handshake and one
+// turn, against the fake agent. Real runtimes add their own start-up time.
+func BenchmarkOpenAndTurn(b *testing.B) {
+	exe, _ := os.Executable()
+	ws, _ := filepath.EvalSymlinks(b.TempDir())
+	opts := domain.SessionOptions{Workspace: ws, Executable: exe, KillGrace: time.Second, Env: []string{fakeacp.EnvEnable + "=1", fakeacp.EnvScenario + "=echo"}}
+	for b.Loop() {
+		s, err := Open(context.Background(), nil, Launch{}, opts, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := s.Prompt(context.Background(), domain.Turn{Prompt: domain.Text("x")}); err != nil {
+			b.Fatal(err)
+		}
+		s.Close(context.Background())
+	}
+}

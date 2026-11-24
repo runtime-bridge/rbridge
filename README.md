@@ -22,11 +22,13 @@ More runtimes and SDKs for other languages come next. See the roadmap below.
 
 ## Install
 
-Requires Go 1.25 or later.
-
 ```sh
-go install github.com/rbridge/rbridge/cmd/rbridge@latest
+curl -fsSL https://raw.githubusercontent.com/rbridge/rbridge/main/scripts/install.sh | sh
 ```
+
+The script verifies the release checksum (and the cosign signature when cosign is installed) before installing to `~/.local/bin`. With Go 1.25 or later: `go install github.com/rbridge/rbridge/cmd/rbridge@latest`.
+
+New here? Follow [docs/getting-started.md](docs/getting-started.md). Reference: [configuration](docs/configuration.md), [threat model](docs/threat-model.md), [performance](docs/performance.md), [releasing](docs/releasing.md).
 
 Or from a checkout:
 
@@ -130,7 +132,12 @@ The HTTP API listens on 127.0.0.1 only, needs the token from `daemon.token` in t
 |---|---|---|
 | Claude Code | `claude -p` with stream-json input and output | Uses your own Claude Code install and sign-in |
 | OpenCode | ACP (`opencode acp`) | Works with local models through Ollama |
+| Codex | ACP through `codex-acp` | ChatGPT login or `CODEX_API_KEY` |
+| Gemini CLI | ACP (`gemini --acp`) | API key by default; `providers.gemini-cli.allow_account_login` to opt in |
+| Claude ACP adapter | ACP through `claude-agent-acp` | API key or cloud provider only |
 | Any ACP agent | ACP, declared in config | Capabilities come from the agent's handshake |
+
+SDKs for other languages: [rbridge-sdk-ts](https://github.com/rbridge/rbridge-sdk-ts) (Node.js) and [rbridge-sdk-python](https://github.com/rbridge/rbridge-sdk-python). Other agents can use rbridge as an MCP server: `rbridge mcp`.
 
 rbridge never bundles, installs or modifies a runtime, and never offers a provider's login. If you set an API key for a runtime (for example `ANTHROPIC_API_KEY`), that runtime bills it as usual; rbridge reports the mode as `api-key`.
 
@@ -192,7 +199,8 @@ go test -tags integration -v -timeout 60m ./tests/integration/
 3. Skills: validation, digests, trust states, delivery to each runtime (done)
 4. Policy profiles and an audit log; first tagged release (done, not yet tagged)
 5. Optional daemon with HTTP and IPC (done, not yet tagged)
-6. More runtimes (Gemini CLI, Codex) and SDKs for other languages
+6. More runtimes (Gemini CLI, Codex) and SDKs for other languages (done)
+7. Production readiness: install script, docs, benchmarks (done); v1.0 waits for the first tagged releases
 
 ## License
 
