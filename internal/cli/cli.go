@@ -21,6 +21,7 @@ import (
 
 // Env is the process environment the CLI runs in. Tests supply their own.
 type Env struct {
+	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Getenv  func(string) string
@@ -29,13 +30,20 @@ type Env struct {
 	Dir     string
 	GOOS    string
 	UID     int
+	// StdinTTY says whether stdin is a terminal, so approvals can be asked.
+	StdinTTY bool
 }
 
 // OSEnv returns the environment of the running process.
 func OSEnv() Env {
 	home, _ := os.UserHomeDir()
 	dir, _ := os.Getwd()
+	tty := false
+	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		tty = true
+	}
 	return Env{
+		Stdin: os.Stdin, StdinTTY: tty,
 		Stdout: os.Stdout, Stderr: os.Stderr,
 		Getenv: os.Getenv, Environ: os.Environ,
 		Home: home, Dir: dir, GOOS: runtime.GOOS, UID: os.Getuid(),
@@ -45,12 +53,21 @@ func OSEnv() Env {
 const usage = `rbridge connects your software to the agent runtimes installed on this machine.
 
 Usage:
-  rbridge providers [--refresh] [--json]   List runtimes and their status
-  rbridge providers show <id> [--refresh] [--json]
-                                           Capabilities, skill locations and limits
-  rbridge doctor [--json]                  Check configuration, directories and runtimes
-  rbridge version [--json]                 Print version information
-  rbridge help                             Show this help
+  rbridge providers [--refresh] [--json]       List runtimes and their status
+  rbridge providers show <id>                  Capabilities, skill locations and limits
+  rbridge doctor [--json]                      Check configuration, directories and runtimes
+
+  rbridge run [flags] "<prompt>"               Run one task and print the answer
+  rbridge chat [flags] ["<first prompt>"]      Talk to a runtime in a session
+      --workspace DIR   --provider ID   --skill ID   --require CAP   --model NAME
+      --approve ask|allow|deny   --timeout 10m   --schema FILE   --json   --quiet
+
+  rbridge sessions [list|show|resume|cancel]   Manage sessions
+  rbridge skills list|add|show|trust|verify|remove|deliver
+                                               Manage the skill library
+
+  rbridge version [--json]                     Print version information
+  rbridge help                                 Show this help
 
 Environment:
   RBRIDGE_HOME   Keep all rbridge state under one directory
@@ -58,6 +75,9 @@ Environment:
 
 // Run executes one command line and returns the exit code.
 func Run(ctx context.Context, args []string, env Env) int {
+	if env.Stdin == nil {
+		env.Stdin = strings.NewReader("")
+	}
 	if len(args) == 0 {
 		fmt.Fprint(env.Stderr, usage)
 		return 2
@@ -73,6 +93,14 @@ func Run(ctx context.Context, args []string, env Env) int {
 		err = cmdProviders(ctx, args[1:], env)
 	case "doctor":
 		err = cmdDoctor(ctx, args[1:], env)
+	case "run":
+		err = cmdRun(ctx, args[1:], env)
+	case "chat":
+		err = cmdChat(ctx, args[1:], env)
+	case "sessions":
+		err = cmdSessions(ctx, args[1:], env)
+	case "skills":
+		err = cmdSkills(ctx, args[1:], env)
 	default:
 		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q; run rbridge help", args[0])
 	}
@@ -128,11 +156,14 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
-func newService(env Env) (*service.Service, error) {
+func newService(env Env) (*service.Service, error) { return newServiceFor(env, env.Dir) }
+
+// newServiceFor loads project configuration from the given workspace.
+func newServiceFor(env Env, workspace string) (*service.Service, error) {
 	return service.FromEnvironment(service.Environment{
 		Env:        config.Env{GOOS: env.GOOS, Getenv: env.Getenv, HomeDir: env.Home, UID: env.UID},
 		Environ:    env.Environ,
-		ProjectDir: env.Dir,
+		ProjectDir: workspace,
 	})
 }
 
