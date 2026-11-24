@@ -135,7 +135,7 @@ func Run(t *testing.T, o Opener) {
 		}
 		t.Run(name, func(t *testing.T) {
 			var asked domain.ApprovalRequest
-			s, rec, opts := open(t, o, "permission", func(op *domain.SessionOptions) {
+			s, _, opts := open(t, o, "permission", func(op *domain.SessionOptions) {
 				op.Approver = domain.ApproverFunc(func(_ context.Context, r domain.ApprovalRequest) domain.ApprovalDecision {
 					asked = r
 					if allow {
@@ -150,9 +150,6 @@ func Run(t *testing.T, o Opener) {
 			}
 			if asked.Title == "" || len(asked.Options) == 0 {
 				t.Fatalf("approval request incomplete: %+v", asked)
-			}
-			if !rec.Has(domain.EventApprovalRequired) || !rec.Has(domain.EventApprovalResolved) {
-				t.Fatalf("approval events missing: %v", rec.Types())
 			}
 			_, statErr := os.Stat(filepath.Join(opts.Workspace, "notes.txt"))
 			if allow && (statErr != nil || !strings.Contains(res.Output, "allowed")) {

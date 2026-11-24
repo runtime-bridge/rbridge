@@ -106,8 +106,6 @@ func (c *client) RequestPermission(ctx context.Context, p sdk.RequestPermissionR
 	for _, o := range p.Options {
 		req.Options = append(req.Options, domain.ApprovalOption{ID: string(o.OptionId), Kind: string(o.Kind), Name: o.Name})
 	}
-	s.emit(domain.NewEvent(domain.EventApprovalRequired, req).WithRaw(raw(p)))
-
 	var d domain.ApprovalDecision
 	if s.opts.Approver == nil {
 		d = req.RejectOnce("policy")
@@ -115,7 +113,6 @@ func (c *client) RequestPermission(ctx context.Context, p sdk.RequestPermissionR
 	} else {
 		d = s.opts.Approver.Decide(ctx, req)
 	}
-	s.emit(domain.NewEvent(domain.EventApprovalResolved, domain.ApprovalResolvedData{ID: req.ID, Decision: d}))
 	s.touch()
 	if d.OptionID == "" {
 		return sdk.RequestPermissionResponse{Outcome: sdk.RequestPermissionOutcome{Cancelled: &sdk.RequestPermissionOutcomeCancelled{}}}, nil

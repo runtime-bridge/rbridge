@@ -178,3 +178,25 @@ func TestSkillFoldersAreReadOnlyAndReadable(t *testing.T) {
 		t.Fatalf("reviewed script without an approver must be denied after asking: %+v", d)
 	}
 }
+
+func TestApprovalEventsOnlyWhenAsking(t *testing.T) {
+	h := newRunHarness(t)
+	h.env[fakeclaude.EnvScenario] = "permission"
+	for _, c := range []struct {
+		profile  string
+		required int
+	}{{"standard", 0}, {"controlled", 1}} {
+		log := &eventLog{}
+		approver := domain.ApproverFunc(func(_ context.Context, r domain.ApprovalRequest) domain.ApprovalDecision { return r.AllowOnce("user") })
+		if _, err := h.svc().Run(context.Background(), domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "claude-code", Profile: c.profile}, RunOptions{Sink: log, Approver: approver}); err != nil {
+			t.Fatal(err)
+		}
+		if n := len(log.of(domain.EventApprovalRequired)); n != c.required {
+			t.Errorf("%s: %d approval.required events, want %d", c.profile, n, c.required)
+		}
+		if len(log.of(domain.EventApprovalResolved)) != 1 {
+			t.Errorf("%s: want one approval.resolved", c.profile)
+		}
+		os.Remove(filepath.Join(h.workspace(), "notes.txt"))
+	}
+}

@@ -178,8 +178,10 @@ type NoticeData struct {
 }
 
 type TurnCompletedData struct {
-	StopReason StopReason `json:"stop_reason"`
-	Usage      *Usage     `json:"usage,omitempty"`
+	StopReason StopReason      `json:"stop_reason"`
+	Output     string          `json:"output,omitempty"`
+	Structured json.RawMessage `json:"structured,omitempty"`
+	Usage      *Usage          `json:"usage,omitempty"`
 }
 
 type TurnFailedData struct {

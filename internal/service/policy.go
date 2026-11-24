@@ -77,7 +77,14 @@ func (g *gate) Decide(ctx context.Context, req domain.ApprovalRequest) domain.Ap
 		d = g.ask(ctx, req)
 	}
 	g.record(req, d)
+	g.emit(domain.NewEvent(domain.EventApprovalResolved, domain.ApprovalResolvedData{ID: req.ID, Decision: d}))
 	return d
+}
+
+func (g *gate) emit(e domain.Event) {
+	if g.sink != nil {
+		g.sink.Emit(e)
+	}
 }
 
 func (g *gate) ask(ctx context.Context, req domain.ApprovalRequest) domain.ApprovalDecision {
@@ -86,6 +93,8 @@ func (g *gate) ask(ctx context.Context, req domain.ApprovalRequest) domain.Appro
 		d.Reason = "needs approval and no approver is configured"
 		return d
 	}
+	// approval.required means someone must answer; policy decisions only get approval.resolved.
+	g.emit(domain.NewEvent(domain.EventApprovalRequired, req))
 	actx := ctx
 	if g.timeout > 0 {
 		var cancel context.CancelFunc
@@ -129,6 +138,7 @@ func (g *gate) FS(ctx context.Context, kind, path string) error {
 	}
 	d := g.ask(ctx, req)
 	g.record(req, d)
+	g.emit(domain.NewEvent(domain.EventApprovalResolved, domain.ApprovalResolvedData{ID: req.ID, Decision: d}))
 	if !d.Allow {
 		return fmt.Errorf("denied: %s", d.Reason)
 	}

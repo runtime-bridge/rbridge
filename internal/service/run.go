@@ -460,7 +460,7 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 	s.mu.Lock()
 	s.lastOutput, s.lastCode = res.Output, ""
 	s.mu.Unlock()
-	s.sink.Emit(domain.NewEvent(domain.EventTurnCompleted, domain.TurnCompletedData{StopReason: res.StopReason, Usage: res.Usage}))
+	s.sink.Emit(domain.NewEvent(domain.EventTurnCompleted, domain.TurnCompletedData(res)))
 	return domain.Result{
 		SessionID: rec.ID, StopReason: res.StopReason, Output: res.Output, Structured: res.Structured,
 		Usage: res.Usage, Provider: s.m.ID, Skills: rec.Skills,

@@ -431,7 +431,7 @@ func (s *Session) handle(line []byte) {
 			ch <- head.Response
 		}
 	case "control_request":
-		go s.answerControl(head.RequestID, head.Request, line)
+		go s.answerControl(head.RequestID, head.Request)
 	case "system":
 		s.handleSystem(head.Subtype, line)
 	case "assistant":
@@ -560,7 +560,7 @@ func (s *Session) handleToolResults(line []byte) {
 }
 
 // answerControl handles requests Claude Code sends to the host.
-func (s *Session) answerControl(id string, req json.RawMessage, line []byte) {
+func (s *Session) answerControl(id string, req json.RawMessage) {
 	var r struct {
 		Subtype   string          `json:"subtype"`
 		ToolName  string          `json:"tool_name"`
@@ -586,7 +586,6 @@ func (s *Session) answerControl(id string, req json.RawMessage, line []byte) {
 			{ID: "deny", Kind: "reject_once", Name: "Deny"},
 		},
 	}
-	s.emit(domain.NewEvent(domain.EventApprovalRequired, ar).WithRaw(line))
 	var d domain.ApprovalDecision
 	if s.opts.Approver == nil {
 		d = ar.RejectOnce("policy")
@@ -603,7 +602,6 @@ func (s *Session) answerControl(id string, req json.RawMessage, line []byte) {
 		d = s.opts.Approver.Decide(ctx, ar)
 		cancel()
 	}
-	s.emit(domain.NewEvent(domain.EventApprovalResolved, domain.ApprovalResolvedData{ID: ar.ID, Decision: d}))
 	s.touch()
 	var resp map[string]any
 	if d.Allow && d.OptionID == "allow" {
