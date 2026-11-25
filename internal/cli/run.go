@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,7 @@ type taskFlags struct {
 	provider  string
 	profile   string
 	model     string
+	mode      string
 	approve   string
 	schema    string
 	timeout   time.Duration
@@ -48,6 +51,7 @@ func (f *taskFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.workspace, "workspace", "", "project directory the runtime works in (default: current directory)")
 	fs.StringVar(&f.provider, "provider", "", "provider id; default is the first available one that meets the requirements")
 	fs.StringVar(&f.model, "model", "", "model name passed to the runtime")
+	fs.StringVar(&f.mode, "mode", "", "runtime session mode to start in, for runtimes that offer modes")
 	fs.StringVar(&f.profile, "profile", "", "policy profile: observe, standard, controlled or custom (default from config)")
 	fs.StringVar(&f.approve, "approve", "", "how to answer permission requests: ask, allow or deny (default ask on a terminal, otherwise deny)")
 	fs.StringVar(&f.schema, "schema", "", "JSON schema file for structured output")
@@ -191,6 +195,101 @@ func (p *printer) result(r domain.Result) {
 	fmt.Fprintf(p.env.Stderr, "[done] %s, stop %s%s\n", r.SessionID, r.StopReason, usage)
 }
 
+// promptMu keeps approval and input questions from interleaving on the terminal.
+var promptMu sync.Mutex
+
+// readLine reads one answer, or returns false when ctx ends first.
+func readLine(ctx context.Context, in *bufio.Reader) (string, bool) {
+	answer := make(chan string, 1)
+	go func() {
+		s, _ := in.ReadString('\n')
+		answer <- strings.TrimSpace(s)
+	}()
+	select {
+	case a := <-answer:
+		return a, true
+	case <-ctx.Done():
+		return "", false
+	}
+}
+
+// newElicitor asks the user on the terminal when the runtime asks a
+// question. Without a terminal, questions are declined.
+func newElicitor(env Env, in *bufio.Reader) domain.Elicitor {
+	if !env.StdinTTY {
+		return nil
+	}
+	return domain.ElicitorFunc(func(ctx context.Context, r domain.InputRequest) domain.InputResponse {
+		promptMu.Lock()
+		defer promptMu.Unlock()
+		fmt.Fprintf(env.Stderr, "\n[input] %s\n", r.Message)
+		if r.Mode == "url" {
+			fmt.Fprintf(env.Stderr, "        open %s yourself, then press enter (n to decline): ", r.URL)
+			a, ok := readLine(ctx, in)
+			if !ok {
+				return domain.InputResponse{Action: "cancel"}
+			}
+			if strings.EqualFold(a, "n") {
+				return domain.InputResponse{Action: "decline"}
+			}
+			return domain.InputResponse{Action: "accept"}
+		}
+		var schema struct {
+			Properties map[string]struct {
+				Type  string   `json:"type"`
+				Title string   `json:"title"`
+				Enum  []string `json:"enum"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		_ = json.Unmarshal(r.Schema, &schema)
+		names := make([]string, 0, len(schema.Properties))
+		for n := range schema.Properties {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		fmt.Fprintln(env.Stderr, "        (an empty answer skips a field; /decline declines)")
+		content := map[string]any{}
+		for _, n := range names {
+			f := schema.Properties[n]
+			label := n
+			if f.Title != "" {
+				label = f.Title
+			}
+			if len(f.Enum) > 0 {
+				label += " [" + strings.Join(f.Enum, "/") + "]"
+			}
+			if slices.Contains(schema.Required, n) {
+				label += " (required)"
+			}
+			fmt.Fprintf(env.Stderr, "        %s: ", label)
+			a, ok := readLine(ctx, in)
+			switch {
+			case !ok:
+				return domain.InputResponse{Action: "cancel"}
+			case a == "/decline":
+				return domain.InputResponse{Action: "decline"}
+			case a == "":
+				continue
+			}
+			switch f.Type {
+			case "boolean":
+				content[n] = a == "y" || a == "yes" || a == "true"
+			case "number", "integer":
+				var x float64
+				if _, err := fmt.Sscan(a, &x); err != nil {
+					fmt.Fprintf(env.Stderr, "        %s is not a number; field skipped\n", a)
+					continue
+				}
+				content[n] = x
+			default:
+				content[n] = a
+			}
+		}
+		return domain.InputResponse{Action: "accept", Content: content}
+	})
+}
+
 // approver answers permission requests according to --approve.
 func newApprover(mode string, env Env, in *bufio.Reader) (domain.Approver, error) {
 	if mode == "" {
@@ -213,10 +312,9 @@ func newApprover(mode string, env Env, in *bufio.Reader) (domain.Approver, error
 			return d
 		}), nil
 	case "ask":
-		var mu sync.Mutex
 		return domain.ApproverFunc(func(ctx context.Context, r domain.ApprovalRequest) domain.ApprovalDecision {
-			mu.Lock()
-			defer mu.Unlock()
+			promptMu.Lock()
+			defer promptMu.Unlock()
 			fmt.Fprintf(env.Stderr, "\n[approve] %s wants to: %s\n          allow? [y]es / [n]o / [a]lways this session: ", r.Tool, r.Title)
 			answer := make(chan string, 1)
 			go func() {
@@ -279,7 +377,7 @@ func cmdRun(ctx context.Context, args []string, env Env) error {
 		return err
 	}
 	pr := &printer{env: env, asJSON: tf.asJSON, quiet: tf.quiet}
-	res, err := svc.Run(ctx, t, service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Client: "cli"})
+	res, err := svc.Run(ctx, t, service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Mode: tf.mode, Elicitor: newElicitor(env, in), Client: "cli"})
 	if err != nil {
 		pr.endLine()
 		if domain.CodeOf(err) == domain.ErrAuthenticationRequired && !tf.asJSON {
@@ -320,7 +418,7 @@ func cmdChat(ctx context.Context, args []string, env Env) error {
 		return err
 	}
 	pr := &printer{env: env, asJSON: tf.asJSON, quiet: tf.quiet}
-	sess, err := svc.OpenSession(ctx, t, service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Client: "cli"})
+	sess, err := svc.OpenSession(ctx, t, service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Mode: tf.mode, Elicitor: newElicitor(env, in), Client: "cli"})
 	if err != nil {
 		return err
 	}
@@ -350,6 +448,11 @@ func chatLoop(ctx context.Context, sess *service.Session, first string, in *bufi
 		if next == "/exit" || next == "/quit" {
 			return nil
 		}
+		if strings.HasPrefix(next, "/") {
+			chatCommand(ctx, sess, next, env)
+			next = ""
+			continue
+		}
 		res, err := sess.Prompt(ctx, domain.Text(next))
 		next = ""
 		if err != nil {
@@ -363,5 +466,73 @@ func chatLoop(ctx context.Context, sess *service.Session, first string, in *bufi
 		if ctx.Err() != nil {
 			return nil
 		}
+	}
+}
+
+// chatCommand handles the chat's slash commands.
+func chatCommand(ctx context.Context, sess *service.Session, line string, env Env) {
+	fields := strings.Fields(line)
+	out := env.Stderr
+	switch fields[0] {
+	case "/help":
+		fmt.Fprintln(out, "/modes, /mode <id>, /options, /set <option> <value>, /exit")
+	case "/modes":
+		cur, modes, err := sess.Modes()
+		if err != nil {
+			fmt.Fprintln(out, "rbridge:", err)
+			return
+		}
+		if len(modes) == 0 {
+			fmt.Fprintln(out, "this runtime offers no modes")
+		}
+		for _, m := range modes {
+			mark := " "
+			if m.ID == cur {
+				mark = "*"
+			}
+			fmt.Fprintf(out, "%s %-12s %s %s\n", mark, m.ID, m.Name, m.Description)
+		}
+	case "/mode":
+		if len(fields) != 2 {
+			fmt.Fprintln(out, "usage: /mode <id>")
+			return
+		}
+		if err := sess.SetMode(ctx, fields[1]); err != nil {
+			fmt.Fprintln(out, "rbridge:", err)
+			return
+		}
+		fmt.Fprintln(out, "[mode]", fields[1])
+	case "/options":
+		opts, err := sess.ConfigOptions()
+		if err != nil {
+			fmt.Fprintln(out, "rbridge:", err)
+			return
+		}
+		if len(opts) == 0 {
+			fmt.Fprintln(out, "this runtime offers no options")
+		}
+		for _, o := range opts {
+			var values []string
+			for _, v := range o.Options {
+				values = append(values, v.Value)
+			}
+			fmt.Fprintf(out, "%-12s %-10s %s", o.ID, o.Current, o.Name)
+			if len(values) > 0 {
+				fmt.Fprintf(out, " (%s)", strings.Join(values, ", "))
+			}
+			fmt.Fprintln(out)
+		}
+	case "/set":
+		if len(fields) != 3 {
+			fmt.Fprintln(out, "usage: /set <option> <value>")
+			return
+		}
+		if err := sess.SetConfigOption(ctx, fields[1], fields[2]); err != nil {
+			fmt.Fprintln(out, "rbridge:", err)
+			return
+		}
+		fmt.Fprintf(out, "[set] %s = %s\n", fields[1], fields[2])
+	default:
+		fmt.Fprintf(out, "unknown command %s; /help lists them\n", fields[0])
 	}
 }

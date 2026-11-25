@@ -305,3 +305,16 @@ func TestConfigCommand(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestChatModesAndOptions(t *testing.T) {
+	f := newFakeCLI(t)
+	r := f.run("/modes\n/set model large\n/options\n/mode nope\nmode?\n/exit\n", "chat", "--quiet", "--provider", "opencode", "--mode", "code")
+	if r.code != 0 || !strings.Contains(r.stdout, "mode: code model: large") {
+		t.Fatalf("chat: %+v", r)
+	}
+	for _, want := range []string{"* code", "[set] model = large", "large      Model (small, large)", "offers no mode \"nope\""} {
+		if !strings.Contains(r.stderr, want) {
+			t.Fatalf("missing %q in %s", want, r.stderr)
+		}
+	}
+}
