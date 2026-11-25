@@ -62,6 +62,10 @@ type Session struct {
 
 	lastOutput string
 	lastCode   domain.ErrorCode
+	// For measured skill compatibility.
+	runtimeVersion string
+	completed      int
+	failed         int
 
 	mu     sync.Mutex
 	rec    domain.SessionRecord
@@ -90,6 +94,7 @@ type sequencer struct {
 	keepRaw  bool
 	now      func() time.Time
 	redact   *redact.Redactor
+	watch    *skillWatch
 }
 
 func (q *sequencer) Emit(e domain.Event) {
@@ -111,6 +116,7 @@ func (q *sequencer) Emit(e domain.Event) {
 		q.log.Write(append(b, '\n'))
 		q.logMu.Unlock()
 	}
+	q.watch.observe(e)
 	if q.out != nil {
 		q.out.Emit(e)
 	}
@@ -312,9 +318,16 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		}
 	}
 
+	seq.watch = newSkillWatch()
 	plan, trusts, err := s.prepareSkills(ctx, m, t, scratch, seq)
 	if err != nil {
+		if domain.CodeOf(err) == domain.ErrSkillUnavailable {
+			s.recordDeliveryFailure(ctx, t.Skills, m.ID, st.Runtime.Version, err)
+		}
 		return fail(err)
+	}
+	for _, d := range plan.Deliveries {
+		seq.watch.add(d.SkillID, plan.Paths[d.SkillID], trusts[d.SkillID].lib)
 	}
 	if len(plan.ProjectLinks) > 0 {
 		inner := fail
@@ -384,7 +397,7 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	if timeout == 0 {
 		timeout = s.cfg.Execution.TaskTimeout
 	}
-	sess := &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout, gate: g}
+	sess := &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout, gate: g, runtimeVersion: st.Runtime.Version}
 	if ro.Mode != "" {
 		if err := sess.SetMode(ctx, ro.Mode); err != nil {
 			sess.Close(context.WithoutCancel(ctx))
@@ -561,12 +574,14 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 		de.SessionID = rec.ID
 		s.mu.Lock()
 		s.lastCode = de.Code
+		s.failed++
 		s.mu.Unlock()
 		s.sink.Emit(domain.NewEvent(domain.EventTurnFailed, domain.TurnFailedData{Code: de.Code, Message: de.Message}))
 		return domain.Result{SessionID: rec.ID, Provider: s.m.ID, Skills: rec.Skills, Errors: []*domain.Error{de}}, de
 	}
 	s.mu.Lock()
 	s.lastOutput, s.lastCode = res.Output, ""
+	s.completed++
 	s.mu.Unlock()
 	if res.AuthMode != "" && res.AuthMode != domain.AuthUnknown {
 		_ = s.svc.store.Put(context.Background(), authCollection, s.m.ID, observedAuth{Mode: res.AuthMode, At: s.svc.now()})
@@ -605,6 +620,14 @@ func (s *Session) Close(ctx context.Context) error {
 	s.mu.Unlock()
 	_ = s.svc.store.Put(context.Background(), sessionCollection, rec.ID, rec)
 	s.svc.writeAudit(rec, s)
+	s.mu.Lock()
+	completed, failed, lastCode := s.completed, s.failed, s.lastCode
+	s.mu.Unlock()
+	if completed+failed > 0 {
+		for _, d := range rec.Skills {
+			s.svc.recordCompat(d, s.m.ID, s.runtimeVersion, s.sink.watch.wasUsed(d.SkillID), completed, failed, lastCode)
+		}
+	}
 	s.release()
 	return err
 }

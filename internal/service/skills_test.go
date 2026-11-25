@@ -307,3 +307,53 @@ func TestCatalogInstall(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 }
+
+func TestMeasuredCompatibility(t *testing.T) {
+	h := newRunHarness(t)
+	svc := h.svc()
+	ctx := context.Background()
+	addSkill(t, svc, "doc-style", domain.TrustReviewed)
+	run := func(provider, prompt string) {
+		t.Helper()
+		if _, err := svc.Run(ctx, domain.Task{Workspace: h.workspace(), Prompt: domain.Text(prompt), Provider: provider, Skills: []string{"doc-style"}}, RunOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("claude-code", "hello")
+	got, err := svc.SkillCompatibility(ctx, "doc-style")
+	if err != nil || len(got) != 1 || got[0].Status != "delivered" || got[0].Used != 0 || got[0].Mode == "" {
+		t.Fatalf("delivered but not opened: %+v %v", got, err)
+	}
+	run("claude-code", "use-skill doc-style")
+	run("opencode", "hi")
+	got, _ = svc.SkillCompatibility(ctx, "doc-style")
+	if len(got) != 2 || got[0].Provider != "claude-code" || got[0].Status != "works" || got[0].Sessions != 2 || got[0].Used != 1 || got[0].RuntimeVersion == "" {
+		t.Fatalf("after use: %+v", got)
+	}
+	if got[1].Provider != "opencode" || got[1].Status != "delivered" {
+		t.Fatalf("opencode: %+v", got[1])
+	}
+
+	// A runtime that cannot take per-session skills is recorded as such.
+	h.env["OPENCODE_CONFIG"] = "/x"
+	h.env["OPENCODE_CONFIG_DIR"] = "/y"
+	svc2 := h.svc()
+	if _, err := svc2.Run(ctx, domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "opencode", Skills: []string{"doc-style"}}, RunOptions{}); domain.CodeOf(err) != domain.ErrSkillUnavailable {
+		t.Fatalf("expected a delivery failure: %v", err)
+	}
+	got, _ = svc2.SkillCompatibility(ctx, "doc-style")
+	if got[1].Status != "delivery_failed" || got[1].LastError != string(domain.ErrSkillUnavailable) {
+		t.Fatalf("delivery failure: %+v", got[1])
+	}
+
+	// A new version of the skill starts over.
+	v2 := filepath.Join(t.TempDir(), "doc-style")
+	os.MkdirAll(v2, 0o755)
+	os.WriteFile(filepath.Join(v2, "SKILL.md"), []byte("---\nname: doc-style\ndescription: Version two.\n---\nnew body\n"), 0o644)
+	if _, err := svc.Skills().Add(ctx, registry.AddRequest{Path: v2}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := svc.SkillCompatibility(ctx, "doc-style"); len(got) != 0 {
+		t.Fatalf("results for the old version shown for the new one: %+v", got)
+	}
+}

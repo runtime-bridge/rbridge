@@ -165,6 +165,9 @@ func (f *fake) runTurn(text string) {
 		f.send(map[string]any{"type": "rate_limit_event", "rate_limit_info": map[string]any{"status": "allowed"}})
 		f.assistant(map[string]any{"type": "tool_use", "id": "toolu_r", "name": "Read", "input": map[string]any{"file_path": filepath.Join(cwd, "x")}})
 		f.send(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": "toolu_r", "content": "ok"}}}})
+		if name, ok := strings.CutPrefix(text, "use-skill "); ok {
+			f.assistant(map[string]any{"type": "tool_use", "id": "toolu_s", "name": "Skill", "input": map[string]any{"skill": name}})
+		}
 		f.text("echo: ")
 		f.text(text)
 		f.result("echo: "+text, nil)

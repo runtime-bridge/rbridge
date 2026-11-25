@@ -207,8 +207,11 @@ func skillsShow(ctx context.Context, args []string, env Env) error {
 	dir := reg.Path(rec)
 	sk, parseErr := spec.Parse(dir, reg.Limits)
 	verifyErr := reg.Verify(ctx, rec)
+	compat, _ := svc.SkillCompatibility(ctx, rec.ID)
+	delivered, _ := svc.PermanentDeliveries(ctx, rec.ID)
 	if *asJSON {
-		out := map[string]any{"record": rec, "path": dir, "files": sk.Files, "scripts": sk.Scripts, "warnings": sk.Warnings, "verified": verifyErr == nil}
+		out := map[string]any{"record": rec, "path": dir, "files": sk.Files, "scripts": sk.Scripts, "warnings": sk.Warnings, "verified": verifyErr == nil,
+			"compatibility": compat, "deliveries": delivered}
 		if verifyErr != nil {
 			out["verify_error"] = verifyErr.Error()
 		}
@@ -221,6 +224,28 @@ func skillsShow(ctx context.Context, args []string, env Env) error {
 		fmt.Fprintf(w, "  verify:    FAILED: %v\n", verifyErr)
 	} else {
 		fmt.Fprintln(w, "  verify:    ok")
+	}
+	fmt.Fprintln(w, "\nCompatibility (measured by rbridge for this version):")
+	if len(compat) == 0 {
+		fmt.Fprintln(w, "  not used in a session yet")
+	} else {
+		tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(tw, "  RUNTIME\tVERSION\tSTATUS\tSESSIONS\tUSED\tDELIVERY\tCHECKED")
+		for _, c := range compat {
+			status := c.Status
+			if c.LastError != "" && c.Status != "works" {
+				status += " (" + c.LastError + ")"
+			}
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%d\t%d\t%s\t%s\n", c.Provider, dash(c.RuntimeVersion), status, c.Sessions, c.Used, dash(c.Mode), c.CheckedAt.Format("2006-01-02"))
+		}
+		tw.Flush()
+		fmt.Fprintln(w, "  works: the runtime opened the skill in a completed turn; delivered: it was available but not seen in use")
+	}
+	if len(delivered) > 0 {
+		fmt.Fprintln(w, "\nPermanently delivered to:")
+		for _, d := range delivered {
+			fmt.Fprintf(w, "  %s (%s, %s)\n", d.Path, d.Provider, d.Mode)
+		}
 	}
 	if parseErr == nil {
 		fmt.Fprintf(w, "\nFiles (%d):\n", len(sk.Files))

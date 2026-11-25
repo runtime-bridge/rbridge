@@ -84,6 +84,8 @@ For Claude Code, skills go into a per-session directory passed with `--add-dir`.
 
 Teams can publish a skill catalog (`specs/skill-catalog.md`): a JSON index of skills pinned to a Git commit and a digest. rbridge reads only the catalogs listed in `skills.catalogs`; `rbridge skills search <words>` lists matches and `rbridge skills add --catalog team:security-audit` installs one only if its files match the listed digest.
 
+`rbridge skills show <id>` reports measured compatibility for the installed version: for each runtime it was used with, the runtime version, delivery mode, sessions, and whether the runtime was seen opening the skill (`works`) or only had it available (`delivered`). Nothing is taken from the skill's own claims.
+
 Projects that use the `skills` installer keep a `skills-lock.json`. `rbridge skills import` reads it and adds each listed skill to the library: from the copy installed under `.agents/skills` when its files match the lock's hash, otherwise from its Git source pinned to the locked commit (`--no-fetch` turns that off), checked against the same hash. Entries that cannot be verified are skipped with the reason, and imported skills start unreviewed.
 
 To use a skill with a runtime started by hand, place it in the runtime's own folder: `rbridge skills deliver security-audit --provider claude-code --permanent` (user folder) or add `--project .` (project folder, also added to `.git/info/exclude`). rbridge tracks what it placed, keeps it in step when trust changes, removes it when the skill is blocked or removed, and never replaces a folder it did not create. `rbridge skills deliveries` lists them and `rbridge skills undeliver <id>` removes them.

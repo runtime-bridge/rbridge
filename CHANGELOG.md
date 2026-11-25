@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Measured skill compatibility: each session records, per skill and runtime, the delivery mode, runtime version, turn outcomes and whether the runtime was seen opening the skill. `rbridge skills show` reports it for the installed version.
+
 - Skill catalogs: `skills.catalogs` lists HTTP indexes of skills pinned to a Git commit and a digest (`specs/skill-catalog.md`). `rbridge skills search` and `rbridge skills add --catalog` use them, and an install is refused unless the files match the listed digest. `rbridge skills digest` computes the value for publishers.
 
 - `rbridge skills import` adds the skills listed in a project's `skills-lock.json`, verifying each against the lock's content hash before installing it.

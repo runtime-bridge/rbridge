@@ -360,3 +360,18 @@ func TestSkillsImportLock(t *testing.T) {
 		t.Fatalf("edited copy: %+v", r)
 	}
 }
+
+func TestSkillsShowCompatibility(t *testing.T) {
+	f := newFakeCLI(t)
+	f.run("", "skills", "add", "--trust", "reviewed", writeSkill(t, "cmp-skill"))
+	if r := f.run("", "skills", "show", "cmp-skill"); !strings.Contains(r.stdout, "not used in a session yet") {
+		t.Fatalf("before: %+v", r)
+	}
+	if r := f.run("", "run", "--provider", "claude-code", "--skill", "cmp-skill", "--quiet", "use-skill cmp-skill"); r.code != 0 {
+		t.Fatalf("run: %+v", r)
+	}
+	r := f.run("", "skills", "show", "cmp-skill")
+	if !strings.Contains(r.stdout, "claude-code") || !strings.Contains(r.stdout, "works") {
+		t.Fatalf("after: %s", r.stdout)
+	}
+}
