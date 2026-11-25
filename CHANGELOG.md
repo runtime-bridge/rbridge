@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- `rbridge skills deliver --permanent [--project DIR]` places a skill in a runtime's own skill folder and tracks it; `skills undeliver` and `skills deliveries` manage them. Trust changes update them, blocking or removing a skill removes them, and project deliveries are added to `.git/info/exclude`.
+
 - ACP terminals served by rbridge: commands go through the policy profile, run in the workspace with the filtered environment, and are bounded by `execution.command_timeout` and `execution.max_output_bytes`; all are killed when the session ends. The enforcement notice lists them as enforced.
 - Native runtime modes and settings for ACP agents: `run --mode`, chat `/modes`, `/mode`, `/options`, `/set`, daemon `sessions.modes`, `sessions.set_mode`, `sessions.options`, `sessions.set_option`, and the same in the Go, Node.js and Python clients. New event `mode.updated`.
 - Questions a runtime asks the user (forms and URLs) reach the caller: a prompt on the terminal, `bridge.WithInput`, `onInput` and `on_input` in the SDKs, and `input.required` with `inputs.answer` in the daemon. Without a handler they are declined.

@@ -178,14 +178,14 @@ func (a *API) Methods() map[string]Method {
 			if err != nil {
 				return nil, err
 			}
-			return a.Svc.Skills().SetTrust(ctx, in.ID, t)
+			return a.Svc.SetSkillTrust(ctx, in.ID, t)
 		},
 		"skills.remove": func(ctx context.Context, _ string, p json.RawMessage) (any, error) {
 			var in idParams
 			if err := decode(p, &in); err != nil {
 				return nil, err
 			}
-			return map[string]bool{"removed": true}, a.Svc.Skills().Remove(ctx, in.ID)
+			return map[string]bool{"removed": true}, a.Svc.RemoveSkill(ctx, in.ID)
 		},
 		"sessions.open": func(ctx context.Context, owner string, p json.RawMessage) (any, error) {
 			var in OpenRequest

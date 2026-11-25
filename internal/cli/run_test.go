@@ -318,3 +318,24 @@ func TestChatModesAndOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillsPermanentDelivery(t *testing.T) {
+	f := newFakeCLI(t)
+	if r := f.run("", "skills", "add", writeSkill(t, "fmt-rules")); r.code != 0 {
+		t.Fatalf("add: %+v", r)
+	}
+	r := f.run("", "skills", "deliver", "fmt-rules", "--provider", "claude-code", "--permanent")
+	dest := filepath.Join(f.home, ".claude", "skills", "fmt-rules")
+	if r.code != 0 || !strings.Contains(r.stdout, dest+" (copy-no-scripts)") {
+		t.Fatalf("deliver: %+v", r)
+	}
+	if r := f.run("", "skills", "deliveries"); !strings.Contains(r.stdout, "fmt-rules  claude-code  user") {
+		t.Fatalf("deliveries: %+v", r)
+	}
+	if r := f.run("", "skills", "undeliver", "fmt-rules"); r.code != 0 || !strings.Contains(r.stdout, "removed "+dest) {
+		t.Fatalf("undeliver: %+v", r)
+	}
+	if _, err := os.Lstat(dest); !os.IsNotExist(err) {
+		t.Fatal("still delivered")
+	}
+}

@@ -82,6 +82,8 @@ Skills use the [Agent Skills](https://agentskills.io/specification) format uncha
 
 For Claude Code, skills go into a per-session directory passed with `--add-dir`. For OpenCode, rbridge writes a per-session config file listing the skills and passes it with `OPENCODE_CONFIG`, which OpenCode merges with your own configuration. Either way the directory is removed when the session ends. Git sources must be pinned to a commit: `rbridge skills add https://github.com/org/skills --rev <commit> --subdir security-audit`.
 
+To use a skill with a runtime started by hand, place it in the runtime's own folder: `rbridge skills deliver security-audit --provider claude-code --permanent` (user folder) or add `--project .` (project folder, also added to `.git/info/exclude`). rbridge tracks what it placed, keeps it in step when trust changes, removes it when the skill is blocked or removed, and never replaces a folder it did not create. `rbridge skills deliveries` lists them and `rbridge skills undeliver <id>` removes them.
+
 ### Policy and audit
 
 Every task runs under a profile (`--profile`, default `standard`):

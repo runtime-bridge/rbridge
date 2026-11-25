@@ -364,10 +364,10 @@ func (b *Bridge) Skills(ctx context.Context) ([]SkillRecord, error) { return b.s
 
 // SetSkillTrust changes a skill's trust state.
 func (b *Bridge) SetSkillTrust(ctx context.Context, id string, t TrustState) (SkillRecord, error) {
-	return b.svc.Skills().SetTrust(ctx, id, t)
+	return b.svc.SetSkillTrust(ctx, id, t)
 }
 
 // RemoveSkill deletes a skill from the library.
 func (b *Bridge) RemoveSkill(ctx context.Context, id string) error {
-	return b.svc.Skills().Remove(ctx, id)
+	return b.svc.RemoveSkill(ctx, id)
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/runtime-bridge/rbridge/internal/service"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,8 +35,12 @@ func cmdSkills(ctx context.Context, args []string, env Env) error {
 		return skillsRemove(ctx, rest, env)
 	case "deliver":
 		return skillsDeliver(ctx, rest, env)
+	case "undeliver":
+		return skillsUndeliver(ctx, rest, env)
+	case "deliveries":
+		return skillsDeliveries(ctx, rest, env)
 	}
-	return domain.Errorf(domain.ErrInvalidInput, "unknown skills command %q (list, add, show, trust, verify, remove, deliver)", sub)
+	return domain.Errorf(domain.ErrInvalidInput, "unknown skills command %q (list, add, show, trust, verify, remove, deliver, undeliver, deliveries)", sub)
 }
 
 func skillsList(ctx context.Context, args []string, env Env) error {
@@ -241,7 +246,7 @@ func skillsTrust(ctx context.Context, args []string, env Env) error {
 	if err != nil {
 		return err
 	}
-	rec, err := svc.Skills().SetTrust(ctx, pos[0], state)
+	rec, err := svc.SetSkillTrust(ctx, pos[0], state)
 	if err != nil {
 		return err
 	}
@@ -301,7 +306,7 @@ func skillsRemove(ctx context.Context, args []string, env Env) error {
 	if err != nil {
 		return err
 	}
-	if err := svc.Skills().Remove(ctx, pos[0]); err != nil {
+	if err := svc.RemoveSkill(ctx, pos[0]); err != nil {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "removed %s\n", pos[0])
@@ -315,12 +320,18 @@ func skillsDeliver(ctx context.Context, args []string, env Env) error {
 	provider := fs.String("provider", "", "provider to lay the skills out for")
 	to := fs.String("to", "", "empty or new directory to write into")
 	workspace := fs.String("workspace", "", "project to check for name clashes (default: current directory)")
+	permanent := fs.Bool("permanent", false, "place the skills in the runtime's own skill folder and keep them there")
+	project := fs.String("project", "", "with --permanent: use this project's skill folder instead of the user folder")
+	asJSON := fs.Bool("json", false, "print JSON")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
+	if *permanent {
+		return deliverPermanent(ctx, pos, *provider, *project, *asJSON, env)
+	}
 	if len(pos) == 0 || *provider == "" || *to == "" {
-		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills deliver <id>... --provider ID --to DIR")
+		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills deliver <id>... --provider ID --to DIR, or --permanent [--project DIR]")
 	}
 	out, err := filepath.Abs(*to)
 	if err != nil {
@@ -378,4 +389,112 @@ func skillsDeliver(ctx context.Context, args []string, env Env) error {
 		fmt.Fprintf(env.Stderr, "[warn] another skill named %s exists at %s\n", c.SkillID, c.Path)
 	}
 	return nil
+}
+
+func deliverPermanent(ctx context.Context, ids []string, provider, project string, asJSON bool, env Env) error {
+	if len(ids) == 0 || provider == "" {
+		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills deliver <id>... --provider ID --permanent [--project DIR]")
+	}
+	if project != "" {
+		abs, err := filepath.Abs(project)
+		if err != nil {
+			return err
+		}
+		project = abs
+	}
+	svc, err := newService(env)
+	if err != nil {
+		return err
+	}
+	var out []service.PermanentDelivery
+	for _, id := range ids {
+		d, err := svc.DeliverPermanent(ctx, id, provider, project)
+		if err != nil {
+			return err
+		}
+		out = append(out, d)
+	}
+	if asJSON {
+		return writeJSON(env.Stdout, out)
+	}
+	for _, d := range out {
+		fmt.Fprintf(env.Stdout, "%s -> %s (%s)\n", d.SkillID, d.Path, d.Mode)
+		if d.Mode == "copy-no-scripts" {
+			fmt.Fprintf(env.Stdout, "  scripts left out; trust the skill as reviewed or trusted to include them\n")
+		}
+		if d.Excluded != "" {
+			fmt.Fprintf(env.Stdout, "  added %s to .git/info/exclude\n", d.Excluded)
+		}
+	}
+	fmt.Fprintln(env.Stdout, "\nrbridge keeps these in step with trust changes; remove them with rbridge skills undeliver.")
+	return nil
+}
+
+func skillsUndeliver(ctx context.Context, args []string, env Env) error {
+	fs := newFlags("skills undeliver", env)
+	provider := fs.String("provider", "", "only this provider (default: all)")
+	project := fs.String("project", "", "only this project (default: user folders and every project)")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills undeliver <id> [--provider ID] [--project DIR]")
+	}
+	if *project != "" {
+		abs, err := filepath.Abs(*project)
+		if err != nil {
+			return err
+		}
+		*project = abs
+	}
+	svc, err := newService(env)
+	if err != nil {
+		return err
+	}
+	removed, err := svc.Undeliver(ctx, pos[0], *provider, *project)
+	for _, d := range removed {
+		fmt.Fprintf(env.Stdout, "removed %s\n", d.Path)
+	}
+	if err != nil {
+		return err
+	}
+	if len(removed) == 0 {
+		fmt.Fprintf(env.Stdout, "no permanent deliveries of %s matched\n", pos[0])
+	}
+	return nil
+}
+
+func skillsDeliveries(ctx context.Context, args []string, env Env) error {
+	fs := newFlags("skills deliveries", env)
+	asJSON := fs.Bool("json", false, "print JSON")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	id := ""
+	if len(pos) > 0 {
+		id = pos[0]
+	}
+	svc, err := newService(env)
+	if err != nil {
+		return err
+	}
+	ds, err := svc.PermanentDeliveries(ctx, id)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(env.Stdout, ds)
+	}
+	if len(ds) == 0 {
+		fmt.Fprintln(env.Stdout, "no permanent deliveries")
+		return nil
+	}
+	tw := tabwriter.NewWriter(env.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "SKILL\tPROVIDER\tSCOPE\tMODE\tPATH")
+	for _, d := range ds {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", d.SkillID, d.Provider, d.Scope, d.Mode, d.Path)
+	}
+	return tw.Flush()
 }
