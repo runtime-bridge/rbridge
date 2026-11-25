@@ -50,6 +50,11 @@ type Session struct {
 	text     strings.Builder
 	activity atomic.Int64 // unix nanos of the last agent message
 	closed   atomic.Bool
+
+	terminals *terminals
+	modeID    string
+	modes     []domain.Mode
+	options   []domain.ConfigOption
 }
 
 // Open starts the agent, runs the handshake and creates or resumes a session.
@@ -107,11 +112,9 @@ func (s *Session) handshake(ctx context.Context, l Launch) error {
 	}
 	ver := l.ClientVersion
 	ir, err := s.conn.Initialize(hctx, sdk.InitializeRequest{
-		ProtocolVersion: sdk.ProtocolVersionNumber,
-		ClientCapabilities: sdk.ClientCapabilities{
-			Fs: sdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: s.opts.ClientFSWrite},
-		},
-		ClientInfo: &sdk.Implementation{Name: name, Version: ver},
+		ProtocolVersion:    sdk.ProtocolVersionNumber,
+		ClientCapabilities: s.clientCapabilities(),
+		ClientInfo:         &sdk.Implementation{Name: name, Version: ver},
 	})
 	if err != nil {
 		return s.mapErr("initialize", err)
@@ -128,6 +131,7 @@ func (s *Session) handshake(ctx context.Context, l Launch) error {
 		return err
 	}
 	var configOptions []sdk.SessionConfigOption
+	var modes *sdk.SessionModeState
 	switch {
 	case s.opts.ResumeNativeID != "" && sc.Resume != nil:
 		r, err := s.conn.ResumeSession(hctx, sdk.ResumeSessionRequest{Cwd: s.opts.Workspace, SessionId: sdk.SessionId(s.opts.ResumeNativeID), McpServers: mcp})
@@ -135,14 +139,14 @@ func (s *Session) handshake(ctx context.Context, l Launch) error {
 			return s.mapErr("session/resume", err)
 		}
 		s.nativeID = s.opts.ResumeNativeID
-		configOptions = r.ConfigOptions
+		configOptions, modes = r.ConfigOptions, r.Modes
 	case s.opts.ResumeNativeID != "" && ir.AgentCapabilities.LoadSession:
 		r, err := s.conn.LoadSession(hctx, sdk.LoadSessionRequest{Cwd: s.opts.Workspace, SessionId: sdk.SessionId(s.opts.ResumeNativeID), McpServers: mcp})
 		if err != nil {
 			return s.mapErr("session/load", err)
 		}
 		s.nativeID = s.opts.ResumeNativeID
-		configOptions = r.ConfigOptions
+		configOptions, modes = r.ConfigOptions, r.Modes
 	case s.opts.ResumeNativeID != "":
 		return domain.Errorf(domain.ErrCapabilityUnavailable, "runtime cannot resume or load sessions")
 	default:
@@ -151,8 +155,10 @@ func (s *Session) handshake(ctx context.Context, l Launch) error {
 			return s.mapErr("session/new", err)
 		}
 		s.nativeID = string(r.SessionId)
-		configOptions = r.ConfigOptions
+		configOptions, modes = r.ConfigOptions, r.Modes
 	}
+	s.setModes(modes)
+	s.setOptions(configOptions)
 
 	model := currentModel(configOptions)
 	if s.opts.Model != "" {
@@ -268,6 +274,7 @@ func (s *Session) Close(ctx context.Context) error {
 		_, _ = s.conn.CloseSession(cctx, sdk.CloseSessionRequest{SessionId: sdk.SessionId(s.nativeID)})
 		cancel()
 	}
+	s.terminals.closeAll()
 	_ = s.stdin.Close()
 	select {
 	case <-s.waited:
@@ -281,6 +288,7 @@ func (s *Session) Close(ctx context.Context) error {
 
 func (s *Session) kill() {
 	s.closed.Store(true)
+	s.terminals.closeAll()
 	_ = s.stdin.Close()
 	_ = process.StopTree(s.cmd, s.waited, time.Second)
 }
@@ -481,3 +489,176 @@ func (r *ring) String() string {
 	defer r.mu.Unlock()
 	return strings.TrimSpace(string(r.buf))
 }
+
+func (s *Session) clientCapabilities() sdk.ClientCapabilities {
+	c := sdk.ClientCapabilities{
+		Fs:       sdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: s.opts.ClientFSWrite},
+		Terminal: s.opts.ClientTerminal,
+	}
+	if s.opts.Elicitor != nil {
+		c.Elicitation = &sdk.ElicitationCapabilities{Form: &sdk.ElicitationFormCapabilities{}, Url: &sdk.ElicitationUrlCapabilities{}}
+	}
+	return c
+}
+
+func (s *Session) setModes(m *sdk.SessionModeState) {
+	if m == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.modeID = string(m.CurrentModeId)
+	s.modes = nil
+	for _, x := range m.AvailableModes {
+		mode := domain.Mode{ID: string(x.Id), Name: x.Name}
+		if x.Description != nil {
+			mode.Description = *x.Description
+		}
+		s.modes = append(s.modes, mode)
+	}
+}
+
+// setOptions converts ACP config options through JSON, since the SDK keeps
+// them as unions.
+func (s *Session) setOptions(opts []sdk.SessionConfigOption) {
+	b, err := json.Marshal(opts)
+	if err != nil {
+		return
+	}
+	var raw []struct {
+		ID           string          `json:"id"`
+		Name         string          `json:"name"`
+		Description  string          `json:"description"`
+		Type         string          `json:"type"`
+		CurrentValue json.RawMessage `json:"currentValue"`
+		Options      json.RawMessage `json:"options"`
+	}
+	if json.Unmarshal(b, &raw) != nil {
+		return
+	}
+	var out []domain.ConfigOption
+	for _, r := range raw {
+		o := domain.ConfigOption{ID: r.ID, Name: r.Name, Description: r.Description, Type: r.Type}
+		if o.Type == "" {
+			o.Type = "select"
+		}
+		var str string
+		var bl bool
+		switch {
+		case json.Unmarshal(r.CurrentValue, &str) == nil:
+			o.Current = str
+		case json.Unmarshal(r.CurrentValue, &bl) == nil:
+			o.Current = fmt.Sprint(bl)
+		}
+		var flat []struct {
+			Value   string            `json:"value"`
+			Name    string            `json:"name"`
+			Options []json.RawMessage `json:"options"`
+		}
+		if json.Unmarshal(r.Options, &flat) == nil {
+			for _, f := range flat {
+				if f.Value != "" {
+					o.Options = append(o.Options, domain.ConfigOptionItem{Value: f.Value, Name: f.Name})
+					continue
+				}
+				for _, g := range f.Options {
+					var item domain.ConfigOptionItem
+					if json.Unmarshal(g, &item) == nil && item.Value != "" {
+						o.Options = append(o.Options, item)
+					}
+				}
+			}
+		}
+		out = append(out, o)
+	}
+	s.mu.Lock()
+	s.options = out
+	s.mu.Unlock()
+}
+
+// Modes returns the current mode and the modes the agent offers.
+func (s *Session) Modes() (string, []domain.Mode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.modeID, append([]domain.Mode(nil), s.modes...)
+}
+
+// SetMode switches the agent's session mode.
+func (s *Session) SetMode(ctx context.Context, id string) error {
+	_, modes := s.Modes()
+	found := false
+	for _, m := range modes {
+		if m.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		return domain.Errorf(domain.ErrInvalidInput, "the runtime offers no mode %q", id)
+	}
+	if _, err := s.conn.SetSessionMode(ctx, sdk.SetSessionModeRequest{SessionId: sdk.SessionId(s.nativeID), ModeId: sdk.SessionModeId(id)}); err != nil {
+		return s.mapErr("session/set_mode", err)
+	}
+	s.mu.Lock()
+	s.modeID = id
+	s.mu.Unlock()
+	s.emit(domain.NewEvent(domain.EventModeUpdated, domain.ModeUpdatedData{Mode: id}))
+	return nil
+}
+
+// ConfigOptions returns the agent's session settings.
+func (s *Session) ConfigOptions() []domain.ConfigOption {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]domain.ConfigOption(nil), s.options...)
+}
+
+// SetConfigOption changes one session setting.
+func (s *Session) SetConfigOption(ctx context.Context, id, value string) error {
+	var opt *domain.ConfigOption
+	for _, o := range s.ConfigOptions() {
+		if o.ID == id {
+			o := o
+			opt = &o
+		}
+	}
+	if opt == nil {
+		return domain.Errorf(domain.ErrInvalidInput, "the runtime offers no option %q", id)
+	}
+	req := sdk.SetSessionConfigOptionRequest{}
+	switch opt.Type {
+	case "boolean":
+		if value != "true" && value != "false" {
+			return domain.Errorf(domain.ErrInvalidInput, "option %s takes true or false", id)
+		}
+		req.Boolean = &sdk.SetSessionConfigOptionBoolean{SessionId: sdk.SessionId(s.nativeID), ConfigId: sdk.SessionConfigId(id), Type: "boolean", Value: value == "true"}
+	default:
+		ok := len(opt.Options) == 0
+		for _, item := range opt.Options {
+			if item.Value == value {
+				ok = true
+			}
+		}
+		if !ok {
+			return domain.Errorf(domain.ErrInvalidInput, "option %s has no value %q", id, value)
+		}
+		req.ValueId = &sdk.SetSessionConfigOptionValueId{SessionId: sdk.SessionId(s.nativeID), ConfigId: sdk.SessionConfigId(id), Value: sdk.SessionConfigValueId(value)}
+	}
+	r, err := s.conn.SetSessionConfigOption(ctx, req)
+	if err != nil {
+		return s.mapErr("session/set_config_option", err)
+	}
+	if len(r.ConfigOptions) > 0 {
+		s.setOptions(r.ConfigOptions)
+	} else {
+		s.mu.Lock()
+		for i := range s.options {
+			if s.options[i].ID == id {
+				s.options[i].Current = value
+			}
+		}
+		s.mu.Unlock()
+	}
+	return nil
+}
+
+var _ domain.Extensions = (*Session)(nil)

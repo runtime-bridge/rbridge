@@ -76,7 +76,14 @@ func (c *client) SessionUpdate(_ context.Context, n sdk.SessionNotification) err
 			msg += ": " + *u.Notice.Description
 		}
 		s.emit(domain.NewEvent(domain.EventNotice, domain.NoticeData{Message: msg, Level: string(u.Notice.Severity)}).WithRaw(raw(u.Notice)))
-	case u.AvailableCommandsUpdate != nil, u.UserMessageChunk != nil, u.ConfigOptionUpdate != nil, u.SessionInfoUpdate != nil, u.CurrentModeUpdate != nil:
+	case u.CurrentModeUpdate != nil:
+		s.mu.Lock()
+		s.modeID = string(u.CurrentModeUpdate.CurrentModeId)
+		s.mu.Unlock()
+		s.emit(domain.NewEvent(domain.EventModeUpdated, domain.ModeUpdatedData{Mode: string(u.CurrentModeUpdate.CurrentModeId)}).WithRaw(raw(u.CurrentModeUpdate)))
+	case u.ConfigOptionUpdate != nil:
+		s.setOptions(u.ConfigOptionUpdate.ConfigOptions)
+	case u.AvailableCommandsUpdate != nil, u.UserMessageChunk != nil, u.SessionInfoUpdate != nil:
 		// Session bookkeeping; not part of the bridge event stream.
 	default:
 		b, _ := json.Marshal(u)
@@ -228,24 +235,54 @@ func errTerminal() error {
 	return sdk.NewRequestError(-32601, "rbridge does not offer terminals to this session", nil)
 }
 
-func (c *client) CreateTerminal(context.Context, sdk.CreateTerminalRequest) (sdk.CreateTerminalResponse, error) {
-	return sdk.CreateTerminalResponse{}, errTerminal()
-}
-func (c *client) KillTerminal(context.Context, sdk.KillTerminalRequest) (sdk.KillTerminalResponse, error) {
-	return sdk.KillTerminalResponse{}, errTerminal()
-}
-func (c *client) TerminalOutput(context.Context, sdk.TerminalOutputRequest) (sdk.TerminalOutputResponse, error) {
-	return sdk.TerminalOutputResponse{}, errTerminal()
-}
-func (c *client) ReleaseTerminal(context.Context, sdk.ReleaseTerminalRequest) (sdk.ReleaseTerminalResponse, error) {
-	return sdk.ReleaseTerminalResponse{}, errTerminal()
-}
-func (c *client) WaitForTerminalExit(context.Context, sdk.WaitForTerminalExitRequest) (sdk.WaitForTerminalExitResponse, error) {
-	return sdk.WaitForTerminalExitResponse{}, errTerminal()
-}
-
-func (c *client) CreateElicitation(context.Context, sdk.CreateElicitationRequest) (sdk.CreateElicitationResponse, error) {
-	return sdk.CreateElicitationResponse{}, sdk.NewRequestError(-32601, "rbridge does not support elicitation yet", nil)
+// CreateElicitation passes a question from the agent to the caller. URLs are
+// never opened by rbridge; the caller decides what to do with them.
+func (c *client) CreateElicitation(ctx context.Context, p sdk.CreateElicitationRequest) (sdk.CreateElicitationResponse, error) {
+	s := c.s
+	if s.opts.Elicitor == nil {
+		return sdk.CreateElicitationResponse{Decline: &sdk.CreateElicitationDecline{Action: "decline"}}, nil
+	}
+	req := domain.InputRequest{SessionID: s.opts.BridgeID}
+	switch {
+	case p.Form != nil:
+		req.Mode, req.Message = "form", p.Form.Message
+		req.Schema, _ = json.Marshal(p.Form.RequestedSchema)
+	case p.Url != nil:
+		req.Mode, req.Message, req.URL = "url", p.Url.Message, p.Url.Url
+		req.ID = string(p.Url.ElicitationId)
+	default:
+		return sdk.CreateElicitationResponse{Decline: &sdk.CreateElicitationDecline{Action: "decline"}}, nil
+	}
+	if req.ID == "" {
+		req.ID = newTerminalID()[len("term-"):]
+	}
+	s.emit(domain.NewEvent(domain.EventInputRequired, req))
+	resp := s.opts.Elicitor.Ask(ctx, req)
+	s.touch()
+	by := "user"
+	if resp.Action == "" {
+		resp.Action = "decline"
+	}
+	s.emit(domain.NewEvent(domain.EventInputResolved, domain.InputResolvedData{ID: req.ID, Action: resp.Action, By: by}))
+	switch resp.Action {
+	case "accept":
+		out := sdk.CreateElicitationResponse{Accept: &sdk.CreateElicitationAccept{Action: "accept"}}
+		if len(resp.Content) > 0 {
+			b, err := json.Marshal(resp.Content)
+			if err != nil {
+				return sdk.CreateElicitationResponse{}, err
+			}
+			var content map[string]sdk.ElicitationContentValue
+			if err := json.Unmarshal(b, &content); err != nil {
+				return sdk.CreateElicitationResponse{}, sdk.NewInvalidParams(map[string]string{"error": "answer does not fit the form: " + err.Error()})
+			}
+			out.Accept.Content = content
+		}
+		return out, nil
+	case "cancel":
+		return sdk.CreateElicitationResponse{Cancel: &sdk.CreateElicitationCancel{Action: "cancel"}}, nil
+	}
+	return sdk.CreateElicitationResponse{Decline: &sdk.CreateElicitationDecline{Action: "decline"}}, nil
 }
 
 func (c *client) CompleteElicitation(context.Context, sdk.CompleteElicitationNotification) error {

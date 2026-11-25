@@ -4,6 +4,7 @@ package fakeacp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,6 +34,9 @@ const (
 //	crash       exits in the middle of a prompt
 //	spawn       starts a long-lived child and writes its pid to child.pid
 //	env         replies with NAME=value for each variable named in the prompt
+//	terminal    runs the prompt with sh -c in a client terminal and replies with its output
+//	elicit      asks the user for a name through a form
+//	(echo also answers "mode?" with the current mode and model)
 //	writedirect writes direct.txt through fs/write_text_file without asking
 type agent struct {
 	conn     *sdk.AgentSideConnection
@@ -42,6 +46,8 @@ type agent struct {
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
 	n       int
+	mode    string
+	model   string
 }
 
 // Main runs the fake agent on stdin and stdout until stdin closes.
@@ -57,8 +63,13 @@ func Main() {
 }
 
 func (a *agent) Initialize(context.Context, sdk.InitializeRequest) (sdk.InitializeResponse, error) {
+	version := sdk.ProtocolVersion(sdk.ProtocolVersionNumber)
+	if v := os.Getenv("RBRIDGE_FAKE_ACP_PROTOCOL"); v != "" {
+		n, _ := strconv.Atoi(v)
+		version = sdk.ProtocolVersion(n)
+	}
 	return sdk.InitializeResponse{
-		ProtocolVersion: sdk.ProtocolVersionNumber,
+		ProtocolVersion: version,
 		AgentCapabilities: sdk.AgentCapabilities{
 			LoadSession:         true,
 			PromptCapabilities:  sdk.PromptCapabilities{Image: true},
@@ -84,8 +95,23 @@ func (a *agent) NewSession(_ context.Context, p sdk.NewSessionRequest) (sdk.NewS
 	a.n++
 	id := fmt.Sprintf("fake-session-%d", a.n)
 	a.cwd = p.Cwd
+	a.mode, a.model = "ask", "small"
 	a.mu.Unlock()
-	return sdk.NewSessionResponse{SessionId: sdk.SessionId(id)}, nil
+	return sdk.NewSessionResponse{SessionId: sdk.SessionId(id), Modes: fakeModes("ask"), ConfigOptions: a.configOptions()}, nil
+}
+
+func fakeModes(current string) *sdk.SessionModeState {
+	desc := "Edits files"
+	return &sdk.SessionModeState{CurrentModeId: sdk.SessionModeId(current), AvailableModes: []sdk.SessionMode{
+		{Id: "ask", Name: "Ask"}, {Id: "code", Name: "Code", Description: &desc},
+	}}
+}
+
+func (a *agent) configOptions() []sdk.SessionConfigOption {
+	var opts []sdk.SessionConfigOption
+	raw := fmt.Sprintf(`[{"type":"select","id":"model","name":"Model","currentValue":%q,"options":[{"value":"small","name":"Small"},{"value":"large","name":"Large"}]}]`, a.model)
+	_ = json.Unmarshal([]byte(raw), &opts)
+	return opts
 }
 
 func (a *agent) ResumeSession(_ context.Context, p sdk.ResumeSessionRequest) (sdk.ResumeSessionResponse, error) {
@@ -115,10 +141,18 @@ func (a *agent) SetSessionConfigOption(_ context.Context, p sdk.SetSessionConfig
 	if p.ValueId != nil && strings.HasPrefix(string(p.ValueId.Value), "bad") {
 		return sdk.SetSessionConfigOptionResponse{}, sdk.NewInvalidParams(map[string]string{"error": "unknown model"})
 	}
-	return sdk.SetSessionConfigOptionResponse{}, nil
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if p.ValueId != nil && p.ValueId.ConfigId == "model" {
+		a.model = string(p.ValueId.Value)
+	}
+	return sdk.SetSessionConfigOptionResponse{ConfigOptions: a.configOptions()}, nil
 }
 
-func (a *agent) SetSessionMode(context.Context, sdk.SetSessionModeRequest) (sdk.SetSessionModeResponse, error) {
+func (a *agent) SetSessionMode(_ context.Context, p sdk.SetSessionModeRequest) (sdk.SetSessionModeResponse, error) {
+	a.mu.Lock()
+	a.mode = string(p.ModeId)
+	a.mu.Unlock()
 	return sdk.SetSessionModeResponse{}, nil
 }
 
@@ -165,6 +199,13 @@ func (a *agent) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResp
 
 	switch a.scenario {
 	case "", "echo":
+		if text == "mode?" {
+			a.mu.Lock()
+			m, model := a.mode, a.model
+			a.mu.Unlock()
+			a.send(ctx, sid, sdk.UpdateAgentMessageText("mode: "+m+" model: "+model))
+			return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+		}
 		a.send(ctx, sid, sdk.UpdatePlan(sdk.PlanEntry{Content: "echo the prompt", Priority: "medium", Status: "in_progress"}))
 		a.send(ctx, sid, sdk.StartToolCall("tool-1", "Think about it", sdk.WithStartKind(sdk.ToolKindRead), sdk.WithStartStatus(sdk.ToolCallStatusInProgress)))
 		a.send(ctx, sid, sdk.UpdateToolCall("tool-1", sdk.WithUpdateStatus(sdk.ToolCallStatusCompleted)))
@@ -240,6 +281,38 @@ func (a *agent) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResp
 		fmt.Fprintln(os.Stderr, "fatal: request failed with key "+secret)
 		os.Exit(4)
 
+	case "terminal":
+		// Runs the prompt as a shell command through the client's terminal.
+		out, err := a.runTerminal(ctx, sid, "sh", []string{"-c", text}, nil)
+		if err != nil {
+			a.send(ctx, sid, sdk.UpdateAgentMessageText("terminal refused: "+err.Error()))
+		} else {
+			a.send(ctx, sid, sdk.UpdateAgentMessageText(out))
+		}
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+
+	case "elicit":
+		var req sdk.CreateElicitationRequest
+		raw := fmt.Sprintf(`{"mode":"form","sessionId":%q,"message":"What is your name?","requestedSchema":{"type":"object","properties":{"name":{"type":"string","title":"Name"}},"required":["name"]}}`, sid)
+		if err := json.Unmarshal([]byte(raw), &req); err != nil {
+			return sdk.PromptResponse{}, err
+		}
+		r, err := a.conn.CreateElicitation(ctx, req)
+		switch {
+		case err != nil:
+			a.send(ctx, sid, sdk.UpdateAgentMessageText("elicitation error: "+err.Error()))
+		case r.Accept != nil:
+			b, _ := json.Marshal(r.Accept.Content)
+			var content map[string]any
+			json.Unmarshal(b, &content)
+			a.send(ctx, sid, sdk.UpdateAgentMessageText(fmt.Sprint("hello ", content["name"])))
+		case r.Cancel != nil:
+			a.send(ctx, sid, sdk.UpdateAgentMessageText("cancelled"))
+		default:
+			a.send(ctx, sid, sdk.UpdateAgentMessageText("declined"))
+		}
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+
 	case "env":
 		var parts []string
 		for _, name := range strings.Fields(text) {
@@ -258,4 +331,32 @@ func (a *agent) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResp
 		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 	}
 	return sdk.PromptResponse{}, fmt.Errorf("unknown scenario %q", a.scenario)
+}
+
+// runTerminal creates a terminal, waits for it, and returns "exit=<code> <output>".
+func (a *agent) runTerminal(ctx context.Context, sid sdk.SessionId, cmd string, args []string, limit *int64) (string, error) {
+	tr, err := a.conn.CreateTerminal(ctx, sdk.CreateTerminalRequest{SessionId: sid, Command: cmd, Args: args, OutputByteLimit: limit})
+	if err != nil {
+		return "", err
+	}
+	w, err := a.conn.WaitForTerminalExit(ctx, sdk.WaitForTerminalExitRequest{SessionId: sid, TerminalId: tr.TerminalId})
+	if err != nil {
+		return "", err
+	}
+	out, err := a.conn.TerminalOutput(ctx, sdk.TerminalOutputRequest{SessionId: sid, TerminalId: tr.TerminalId})
+	if err != nil {
+		return "", err
+	}
+	_, _ = a.conn.ReleaseTerminal(ctx, sdk.ReleaseTerminalRequest{SessionId: sid, TerminalId: tr.TerminalId})
+	status := "exit="
+	switch {
+	case w.ExitCode != nil:
+		status += strconv.FormatInt(*w.ExitCode, 10)
+	case w.Signal != nil:
+		status = "signal=" + *w.Signal
+	}
+	if out.Truncated {
+		status += " truncated"
+	}
+	return status + " " + out.Output, nil
 }
