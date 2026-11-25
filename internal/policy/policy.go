@@ -239,7 +239,12 @@ func Enforcement(p Profile, integration domain.Integration) []Control {
 	switch integration {
 	case domain.IntegrationACP:
 		add("file writes", "runtime", "fs/write_text_file is checked by rbridge; the agent's own write tools rely on it asking permission")
-		add("commands", "runtime", "rbridge does not offer terminals; the agent's own shell relies on it asking permission")
+		if p.OffersTerminal() {
+			add("client terminals", "enforced", "commands the agent runs through rbridge terminals are checked, time limited and confined to the workspace")
+			add("commands", "runtime", "the agent's own shell relies on it asking permission")
+		} else {
+			add("commands", "runtime", "rbridge does not offer terminals; the agent's own shell relies on it asking permission")
+		}
 	case domain.IntegrationClaudeHeadless:
 		if len(p.ClaudeDisallowed) > 0 {
 			add("disallowed tools", "enforced", "removed with --disallowed-tools: "+strings.Join(p.ClaudeDisallowed, ", "))
@@ -254,6 +259,10 @@ func Enforcement(p Profile, integration domain.Integration) []Control {
 	}
 	return out
 }
+
+// OffersTerminal says whether ACP agents are offered rbridge-run terminals:
+// every profile that does not deny commands, since each command is checked.
+func (p Profile) OffersTerminal() bool { return p.Rules["execute"] != Deny }
 
 // Unenforced lists the controls a profile asks for that rbridge cannot enforce.
 func Unenforced(p Profile, controls []Control) []string {

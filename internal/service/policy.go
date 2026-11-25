@@ -50,6 +50,27 @@ type gate struct {
 	approvals  []audit.Approval
 	lastEdit   time.Time
 	remembered map[string]bool
+	// approvedCmds are commands the caller allowed through a permission
+	// request, so the terminal that runs them is not asked about again.
+	approvedCmds map[string]time.Time
+}
+
+func commandText(req domain.ApprovalRequest) string {
+	var in struct {
+		Command any `json:"command"`
+	}
+	_ = json.Unmarshal(req.Input, &in)
+	switch c := in.Command.(type) {
+	case string:
+		return strings.TrimSpace(c)
+	case []any:
+		parts := make([]string, 0, len(c))
+		for _, x := range c {
+			parts = append(parts, fmt.Sprint(x))
+		}
+		return strings.Join(parts, " ")
+	}
+	return ""
 }
 
 func rememberKey(r domain.ApprovalRequest) string { return r.Tool + "|" + r.Kind }
@@ -63,6 +84,12 @@ func (g *gate) record(req domain.ApprovalRequest, d domain.ApprovalDecision) {
 	g.approvals = append(g.approvals, audit.Approval{Kind: req.Kind, Tool: req.Tool, Decision: decision, By: d.By, Reason: g.redact.String(d.Reason), TimedOut: d.By == "timeout"})
 	if d.Allow && req.Kind == "edit" {
 		g.lastEdit = time.Now()
+	}
+	if cmd := commandText(req); d.Allow && req.Kind == "execute" && cmd != "" && !strings.HasPrefix(req.Tool, "terminal") {
+		if g.approvedCmds == nil {
+			g.approvedCmds = map[string]time.Time{}
+		}
+		g.approvedCmds[cmd] = time.Now()
 	}
 	if d.Allow && d.Remember && d.By == "user" {
 		if g.remembered == nil {
@@ -166,6 +193,54 @@ func (g *gate) FS(ctx context.Context, kind, path string) error {
 	g.record(req, d)
 	g.emit(domain.NewEvent(domain.EventApprovalResolved, domain.ApprovalResolvedData{ID: req.ID, Decision: d}))
 	if !d.Allow {
+		return fmt.Errorf("denied: %s", d.Reason)
+	}
+	return nil
+}
+
+// Command checks a command an ACP agent asks rbridge to run in a terminal.
+func (g *gate) Command(ctx context.Context, command string, args []string) error {
+	full := strings.TrimSpace(command + " " + strings.Join(args, " "))
+	input, _ := json.Marshal(map[string]string{"command": full})
+	req := domain.ApprovalRequest{
+		ID: "terminal", Tool: "terminal", Kind: "execute", Title: "run " + full, Input: input,
+		Options: []domain.ApprovalOption{{ID: "allow", Kind: "allow_once"}, {ID: "allow-always", Kind: "allow_always"}, {ID: "deny", Kind: "reject_once"}},
+	}
+	action, why := g.profile.Decide(req, g.pctx)
+	var d domain.ApprovalDecision
+	switch action {
+	case policy.Allow:
+		return nil
+	case policy.Deny:
+		d = req.RejectOnce("policy")
+		d.Reason = why
+	default:
+		g.mu.Lock()
+		at, approved := time.Time{}, false
+		for c, when := range g.approvedCmds {
+			// sh -c "<cmd>" arrives as the approved text inside a longer line.
+			if c == full || strings.HasSuffix(full, " "+c) {
+				at, approved = when, true
+			}
+		}
+		again := g.remembered[rememberKey(req)]
+		g.mu.Unlock()
+		switch {
+		case approved && time.Since(at) < 2*time.Minute:
+			return nil
+		case again:
+			d = req.AllowOnce("session")
+			d.Reason = "allowed for the rest of this session"
+		default:
+			d = g.ask(ctx, req)
+		}
+	}
+	g.record(req, d)
+	g.emit(domain.NewEvent(domain.EventApprovalResolved, domain.ApprovalResolvedData{ID: req.ID, Decision: d}))
+	if !d.Allow {
+		if d.By == "policy" {
+			return fmt.Errorf("denied by policy: %s", d.Reason)
+		}
 		return fmt.Errorf("denied: %s", d.Reason)
 	}
 	return nil

@@ -43,6 +43,10 @@ type RunOptions struct {
 	Profile string
 	// Client names the caller in session records, for example "cli".
 	Client string
+	// Elicitor answers questions the runtime asks. Nil declines them.
+	Elicitor domain.Elicitor
+	// Mode is a runtime session mode to switch to after the session opens.
+	Mode string
 }
 
 // Session is a live bridge session.
@@ -332,6 +336,9 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		OutputSchema: t.OutputSchema, Approver: g, IdleTimeout: s.cfg.Execution.IdleTimeout,
 		KillGrace: s.cfg.Execution.KillGracePeriod, ScratchDir: scratch,
 		ClientFSWrite: prof.ClientFSWrite, FSGate: g.FS, DisallowedTools: prof.ClaudeDisallowed,
+		ClientTerminal: prof.OffersTerminal(), CommandGate: g.Command,
+		CommandTimeout: s.cfg.Execution.CommandTimeout, MaxOutputBytes: s.cfg.Execution.MaxOutputBytes,
+		Elicitor: ro.Elicitor,
 	}
 	if opts.Model == "" {
 		opts.Model = s.cfg.Providers.Settings[m.ID].Model
@@ -365,7 +372,66 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	if timeout == 0 {
 		timeout = s.cfg.Execution.TaskTimeout
 	}
-	return &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout, gate: g}, nil
+	sess := &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout, gate: g}
+	if ro.Mode != "" {
+		if err := sess.SetMode(ctx, ro.Mode); err != nil {
+			sess.Close(context.WithoutCancel(ctx))
+			return nil, err
+		}
+	}
+	return sess, nil
+}
+
+func (s *Session) extensions() (domain.Extensions, error) {
+	if s.m.Integration == domain.IntegrationClaudeHeadless {
+		// Claude Code's own permission modes could bypass rbridge policy.
+		return nil, domain.Errorf(domain.ErrCapabilityUnavailable, "%s does not offer modes or options through rbridge; use profiles", s.m.ID)
+	}
+	ext, ok := s.ps.(domain.Extensions)
+	if !ok {
+		return nil, domain.Errorf(domain.ErrCapabilityUnavailable, "%s offers no modes or options", s.m.ID)
+	}
+	return ext, nil
+}
+
+// Modes returns the runtime's current mode and the modes it offers.
+func (s *Session) Modes() (string, []domain.Mode, error) {
+	ext, err := s.extensions()
+	if err != nil {
+		return "", nil, err
+	}
+	cur, modes := ext.Modes()
+	return cur, modes, nil
+}
+
+// SetMode switches the runtime's session mode.
+func (s *Session) SetMode(ctx context.Context, id string) error {
+	ext, err := s.extensions()
+	if err != nil {
+		return err
+	}
+	if _, modes := ext.Modes(); len(modes) == 0 {
+		return domain.Errorf(domain.ErrCapabilityUnavailable, "%s offers no session modes", s.m.ID)
+	}
+	return ext.SetMode(ctx, id)
+}
+
+// ConfigOptions returns the runtime's session settings.
+func (s *Session) ConfigOptions() ([]domain.ConfigOption, error) {
+	ext, err := s.extensions()
+	if err != nil {
+		return nil, err
+	}
+	return ext.ConfigOptions(), nil
+}
+
+// SetConfigOption changes one runtime session setting.
+func (s *Session) SetConfigOption(ctx context.Context, id, value string) error {
+	ext, err := s.extensions()
+	if err != nil {
+		return err
+	}
+	return ext.SetConfigOption(ctx, id, value)
 }
 
 type skillTrust struct {
