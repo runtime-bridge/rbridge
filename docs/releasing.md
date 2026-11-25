@@ -17,10 +17,10 @@ Homebrew and Scoop packages need two more repositories (`runtime-bridge/homebrew
 
 ## SDK packages with rbridge inside
 
-After an rbridge release, the SDKs can publish packages that carry it, so `pip install rbridge` or `npm install @runtime-bridge/sdk` brings a per-project copy:
+After an rbridge release, the SDKs can publish packages that carry it, so `pip install rbridge` or `npm install @rbridge/sdk` brings a per-project copy:
 
 1. In each SDK repository, put the rbridge tag in `RBRIDGE_VERSION` and raise the package version.
 2. Push a `v*` tag there. Each SDK's release workflow checks out rbridge at that tag, runs `make cross`, and builds the packages: seven wheels for Python (six platforms and a pure one), and for Node.js six platform packages plus the SDK that lists them as optional dependencies.
-3. One-time setup: on PyPI, add `runtime-bridge/rbridge-sdk-python` (workflow `release.yml`, environment `pypi`) as a trusted publisher of the `rbridge` project. On npm, create the `runtime-bridge` organisation and add an `NPM_TOKEN` secret to `runtime-bridge/rbridge-sdk-ts`.
+3. One-time setup: on PyPI, add `runtime-bridge/rbridge-sdk-python` (workflow `release.yml`, environment `pypi`) as a trusted publisher of the `rbridge` project. On npm, create the `rbridge` organisation and add an `NPM_TOKEN` secret to `runtime-bridge/rbridge-sdk-ts`.
 
 Each SDK's CI already builds the packages on every push and installs the one for Linux and macOS into a fresh project, so a release only publishes what CI has run.

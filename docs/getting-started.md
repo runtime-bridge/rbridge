@@ -91,14 +91,10 @@ func main() {
 }
 ```
 
-Other languages talk to the daemon:
-
-```sh
-rbridge daemon start
-```
+Other languages talk to the daemon. The SDKs start it when it is not running (a daemon started that way stops after 30 idle minutes); `rbridge daemon start` runs one that stays up.
 
 ```js
-import { connect } from "@runtime-bridge/sdk";
+import { connect } from "@rbridge/sdk";
 const rb = await connect({ client: "demo" });
 console.log((await rb.run({ workspace: process.cwd(), prompt: "Explain util.py", profile: "observe" })).output);
 rb.close();

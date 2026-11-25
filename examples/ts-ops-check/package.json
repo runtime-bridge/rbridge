@@ -4,6 +4,6 @@
   "type": "module",
   "description": "Operations health check delegated to an installed agent runtime through rbridge",
   "scripts": { "test": "node --test check.test.js" },
-  "dependencies": { "@runtime-bridge/sdk": "github:runtime-bridge/rbridge-sdk-ts" },
+  "dependencies": { "@rbridge/sdk": "github:runtime-bridge/rbridge-sdk-ts" },
   "engines": { "node": ">=20" }
 }

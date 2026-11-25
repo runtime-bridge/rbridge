@@ -8,7 +8,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { connect } from "@runtime-bridge/sdk";
+import { connect } from "@rbridge/sdk";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 

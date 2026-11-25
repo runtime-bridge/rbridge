@@ -119,7 +119,7 @@ func cmdUninstall(_ context.Context, args []string, env Env) error {
 		if manager == "python" {
 			fmt.Fprintln(env.Stdout, "  pip uninstall rbridge          (or delete the virtual environment)")
 		} else {
-			fmt.Fprintln(env.Stdout, "  npm uninstall @runtime-bridge/sdk   (or delete node_modules)")
+			fmt.Fprintln(env.Stdout, "  npm uninstall @rbridge/sdk   (or delete node_modules)")
 		}
 	case *yes && runtime.GOOS == "windows":
 		fmt.Fprintf(env.Stdout, "\nWindows cannot delete a running program; delete %s after this command ends.\n", exe)
