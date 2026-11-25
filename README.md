@@ -58,7 +58,7 @@ $ echo "Explain main.go" | rbridge run --json
 $ rbridge chat --provider claude-code
 ```
 
-Without `--provider`, rbridge picks the first available runtime in `providers.order` that has every capability given with `--require`. A runtime that needs permission for an action asks through rbridge: on a terminal you are asked, otherwise the request is denied unless you pass `--approve allow`.
+Without `--provider`, rbridge picks the first available runtime in `providers.order` that has every capability given with `--require`. A named runtime is never swapped for another unless `resolution.fallback: allowed`, and even then only for one with the same billing class (subscription, API key or local) unless `resolution.allow_billing_class_change` is set; every move is reported and audited. A runtime that needs permission for an action asks through rbridge: on a terminal you are asked, otherwise the request is denied unless you pass `--approve allow`.
 
 Every command accepts `--json`. Exit codes are stable: `2` invalid input, `10` provider not found, `11` provider unavailable, `12` sign-in required, `13` no provider has the required capabilities, `20` to `24` skill problems, `40` timeout, `41` the runtime failed, `42` cancelled, `50` session not found.
 

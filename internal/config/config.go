@@ -95,9 +95,10 @@ type LaunchConfig struct {
 	EnvPassthrough []string `yaml:"env_passthrough"`
 }
 
-// ResolutionConfig is reserved for fallback rules between providers. Neither
-// key changes behaviour yet: rbridge picks the first available provider that
-// meets the task's requirements, and never replaces a provider the task names.
+// ResolutionConfig holds the fallback rules between providers. With fallback
+// "allowed", a task whose provider is unavailable or fails to start moves to
+// the next provider that can run it, but only to one with the same known
+// billing class unless AllowBillingClassChange is set.
 type ResolutionConfig struct {
 	Fallback                string `yaml:"fallback"`
 	AllowBillingClassChange bool   `yaml:"allow_billing_class_change"`

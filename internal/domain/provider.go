@@ -20,6 +20,9 @@ type Integration string
 const (
 	IntegrationACP            Integration = "acp"
 	IntegrationClaudeHeadless Integration = "claude-headless"
+	// IntegrationModelServer is text generation from a local model server
+	// such as Ollama, with no tools and no skills.
+	IntegrationModelServer Integration = "model-server"
 )
 
 // AuthMode is how a runtime is signed in, as far as rbridge can tell

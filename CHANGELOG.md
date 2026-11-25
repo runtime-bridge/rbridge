@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- `resolution.fallback` and `resolution.allow_billing_class_change` now work: with fallback allowed, a task whose provider is unavailable or fails to start moves to the next provider of the same billing class, and the move is shown as a notice and recorded in the session and the audit log.
+
 - Measured skill compatibility: each session records, per skill and runtime, the delivery mode, runtime version, turn outcomes and whether the runtime was seen opening the skill. `rbridge skills show` reports it for the installed version.
 
 - Skill catalogs: `skills.catalogs` lists HTTP indexes of skills pinned to a Git commit and a digest (`specs/skill-catalog.md`). `rbridge skills search` and `rbridge skills add --catalog` use them, and an install is refused unless the files match the listed digest. `rbridge skills digest` computes the value for publishers.

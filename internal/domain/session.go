@@ -72,6 +72,9 @@ type SessionRecord struct {
 	OwnerPID int `json:"owner_pid,omitempty"`
 	// Unenforced lists controls the profile wanted but rbridge could not enforce.
 	Unenforced []string `json:"unenforced,omitempty"`
+	// Fallback says which provider the task moved from, and why, when
+	// resolution.fallback let it move.
+	Fallback string `json:"fallback,omitempty"`
 }
 
 // Usage is token and cost information when a runtime reports it.

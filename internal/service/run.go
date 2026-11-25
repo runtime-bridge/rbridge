@@ -136,33 +136,39 @@ type candidate struct {
 
 // resolve picks the provider for a task: the named one, or the first in
 // preference order that is available and meets every hard requirement.
-func (s *Service) resolve(ctx context.Context, t domain.Task) (registry.Manifest, ProviderStatus, error) {
+// taskReqs are the capabilities a task needs.
+func taskReqs(t domain.Task) []domain.CapabilityName {
 	reqs := slices.Clone(t.Requirements)
 	if len(t.Skills) > 0 && !slices.Contains(reqs, domain.CapSkills) {
 		reqs = append(reqs, domain.CapSkills)
 	}
-	check := func(m registry.Manifest) (ProviderStatus, string) {
-		if m.Integration != domain.IntegrationACP && m.Integration != domain.IntegrationClaudeHeadless {
-			return ProviderStatus{}, "cannot run tasks"
-		}
-		st, err := s.status(ctx, m, false)
-		if err != nil {
-			return st, "error: " + err.Error()
-		}
-		if st.Runtime.Health != domain.HealthAvailable {
-			return st, string(st.Runtime.Health)
-		}
-		for _, r := range reqs {
-			if c := m.Capabilities.Get(r); c.Supported != domain.SupportYes && c.Supported != domain.SupportPartial {
-				return st, fmt.Sprintf("%s is %s", r, c.Supported)
-			}
-		}
-		if len(t.Skills) > 0 && m.Skills.Strategy == "" {
-			return st, "no per-session skill delivery"
-		}
-		return st, ""
-	}
+	return reqs
+}
 
+// usable reports why a provider cannot run the task, or "" when it can.
+func (s *Service) usable(ctx context.Context, t domain.Task, m registry.Manifest) (ProviderStatus, string) {
+	if m.Integration != domain.IntegrationACP && m.Integration != domain.IntegrationClaudeHeadless && m.Integration != domain.IntegrationModelServer {
+		return ProviderStatus{}, "cannot run tasks"
+	}
+	st, err := s.status(ctx, m, false)
+	if err != nil {
+		return st, "error: " + err.Error()
+	}
+	if st.Runtime.Health != domain.HealthAvailable {
+		return st, string(st.Runtime.Health)
+	}
+	for _, r := range taskReqs(t) {
+		if c := m.Capabilities.Get(r); c.Supported != domain.SupportYes && c.Supported != domain.SupportPartial {
+			return st, fmt.Sprintf("%s is %s", r, c.Supported)
+		}
+	}
+	if len(t.Skills) > 0 && m.Skills.Strategy == "" {
+		return st, "no per-session skill delivery"
+	}
+	return st, ""
+}
+
+func (s *Service) resolve(ctx context.Context, t domain.Task) (registry.Manifest, ProviderStatus, error) {
 	if t.Provider != "" {
 		if err := ctx.Err(); err != nil {
 			return registry.Manifest{}, ProviderStatus{}, domain.Errorf(domain.ErrCancelled, "%v", err)
@@ -171,7 +177,7 @@ func (s *Service) resolve(ctx context.Context, t domain.Task) (registry.Manifest
 		if !ok {
 			return m, ProviderStatus{}, domain.Errorf(domain.ErrProviderNotFound, "no provider %q", t.Provider)
 		}
-		st, why := check(m)
+		st, why := s.usable(ctx, t, m)
 		if err := ctx.Err(); err != nil {
 			return m, st, domain.Errorf(domain.ErrCancelled, "%v", err)
 		}
@@ -186,7 +192,7 @@ func (s *Service) resolve(ctx context.Context, t domain.Task) (registry.Manifest
 	}
 	var tried []candidate
 	for _, m := range s.registry.All() {
-		st, why := check(m)
+		st, why := s.usable(ctx, t, m)
 		if err := ctx.Err(); err != nil {
 			return m, st, domain.Errorf(domain.ErrCancelled, "%v", err)
 		}
@@ -204,6 +210,52 @@ func (s *Service) resolve(ctx context.Context, t domain.Task) (registry.Manifest
 	return registry.Manifest{}, ProviderStatus{}, &domain.Error{Code: domain.ErrCapabilityUnavailable, Message: "no provider can run this task (" + strings.Join(parts, "; ") + ")", Details: details}
 }
 
+// billingClass is how a provider is paid for: "subscription", "api-key",
+// "local", or "unknown" when rbridge cannot tell.
+func billingClass(m registry.Manifest, st ProviderStatus) string {
+	if m.Integration == domain.IntegrationModelServer {
+		return string(domain.AuthLocal)
+	}
+	switch st.Runtime.AuthMode {
+	case domain.AuthSubscription, domain.AuthAPIKey, domain.AuthLocal:
+		return string(st.Runtime.AuthMode)
+	}
+	return string(domain.AuthUnknown)
+}
+
+// fallbackErr says whether an error lets a task move to another provider:
+// the provider could not be reached or started, not that the task was bad.
+func fallbackErr(err error) bool {
+	switch domain.CodeOf(err) {
+	case domain.ErrProviderUnavailable, domain.ErrAuthenticationRequired, domain.ErrProviderProtocol, domain.ErrExecutionFailed, domain.ErrCapabilityUnavailable:
+		return true
+	}
+	return false
+}
+
+// nextProvider finds a provider to fall back to after from failed, following
+// resolution.fallback and resolution.allow_billing_class_change. It returns
+// the reasons other providers were passed over when none qualifies.
+func (s *Service) nextProvider(ctx context.Context, t domain.Task, from string, fromClass string, skip map[string]bool) (registry.Manifest, ProviderStatus, []string, bool) {
+	var passed []string
+	for _, m := range s.registry.All() {
+		if m.ID == from || skip[m.ID] {
+			continue
+		}
+		st, why := s.usable(ctx, t, m)
+		if why != "" {
+			continue
+		}
+		class := billingClass(m, st)
+		if !s.cfg.Resolution.AllowBillingClassChange && (class != fromClass || class == string(domain.AuthUnknown)) {
+			passed = append(passed, fmt.Sprintf("%s (billing %s, from %s)", m.ID, class, fromClass))
+			continue
+		}
+		return m, st, passed, true
+	}
+	return registry.Manifest{}, ProviderStatus{}, passed, false
+}
+
 // OpenSession resolves a provider, delivers skills and starts the runtime.
 func (s *Service) OpenSession(ctx context.Context, t domain.Task, ro RunOptions) (*Session, error) {
 	if err := t.Validate(); err != nil {
@@ -217,16 +269,57 @@ func (s *Service) OpenSession(ctx context.Context, t domain.Task, ro RunOptions)
 	if real, err := filepath.EvalSymlinks(t.Workspace); err == nil {
 		t.Workspace = real
 	}
+	allowed := s.cfg.Resolution.Fallback == "allowed"
 	m, st, err := s.resolve(ctx, t)
+	skip := map[string]bool{}
+	origin, fallback := "", ""
 	if err != nil {
-		return nil, err
+		if !allowed || t.Provider == "" || !fallbackErr(err) {
+			return nil, err
+		}
+		skip[t.Provider] = true
+		alt, altSt, passed, ok := s.nextProvider(ctx, t, t.Provider, billingClass(m, st), skip)
+		if !ok {
+			return nil, noFallback(err, passed)
+		}
+		origin, fallback = t.Provider, fmt.Sprintf("%s to %s: %s", t.Provider, alt.ID, domain.CodeOf(err))
+		m, st = alt, altSt
 	}
-	id := newID("ses_")
-	rec := domain.SessionRecord{
-		ID: id, ProviderID: m.ID, Workspace: t.Workspace, Profile: t.Profile, Model: ro.Model,
-		State: domain.StateCreated, CreatedAt: s.now(), UpdatedAt: s.now(), Client: ro.Client, OwnerPID: os.Getpid(),
+	for {
+		rec := domain.SessionRecord{
+			ID: newID("ses_"), ProviderID: m.ID, Workspace: t.Workspace, Profile: t.Profile, Model: ro.Model,
+			State: domain.StateCreated, CreatedAt: s.now(), UpdatedAt: s.now(), Client: ro.Client, OwnerPID: os.Getpid(),
+			Fallback: fallback,
+		}
+		sess, err := s.start(ctx, m, st, rec, t, ro, "")
+		if err == nil || !allowed || !fallbackErr(err) || ctx.Err() != nil {
+			return sess, err
+		}
+		skip[m.ID] = true
+		if origin == "" {
+			origin = m.ID
+		}
+		alt, altSt, passed, ok := s.nextProvider(ctx, t, m.ID, billingClass(m, st), skip)
+		if !ok {
+			return nil, noFallback(err, passed)
+		}
+		fallback = fmt.Sprintf("%s to %s: %s", origin, alt.ID, domain.CodeOf(err))
+		m, st = alt, altSt
 	}
-	return s.start(ctx, m, st, rec, t, ro, "")
+}
+
+// noFallback adds to err why no other provider was used.
+func noFallback(err error, passed []string) error {
+	if len(passed) == 0 {
+		return err
+	}
+	var de *domain.Error
+	if !errors.As(err, &de) {
+		return err
+	}
+	out := *de
+	out.Message += "; no fallback: other providers have a different or unknown billing class (" + strings.Join(passed, ", ") + "); set resolution.allow_billing_class_change to allow that"
+	return &out
 }
 
 // ResumeSession reopens a stored session with its runtime.
@@ -343,6 +436,9 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		pctx.Skills[trusts[id].lib] = trusts[id].trust
 	}
 	g := &gate{profile: prof, pctx: pctx, user: ro.Approver, timeout: s.cfg.Policy.ApprovalTimeout, sink: seq, redact: s.redact}
+	if rec.Fallback != "" {
+		seq.Emit(domain.NewEvent(domain.EventNotice, domain.NoticeData{Level: "warn", Message: "fell back from " + rec.Fallback}))
+	}
 	seq.Emit(domain.NewEvent(domain.EventNotice, enforcementNotice(prof, controls)))
 	if st.Runtime.Changed != "" {
 		seq.Emit(domain.NewEvent(domain.EventNotice, domain.NoticeData{Level: "warn", Message: m.DisplayName + ": " + st.Runtime.Changed + "; run rbridge providers accept " + m.ID + " if you expected this"}))
@@ -643,6 +739,10 @@ func (s *Service) writeAudit(rec domain.SessionRecord, sess *Session) {
 		ID: newID("aud_"), Time: s.now().UTC(), SessionID: rec.ID, Client: rec.Client, Provider: rec.ProviderID,
 		Workspace: rec.Workspace, Profile: rec.Profile, Skills: rec.Skills, Approvals: sess.gate.snapshot(),
 		Turns: rec.Turns, StopReason: rec.LastStop, ErrorCode: code, Unenforced: rec.Unenforced,
+	}
+	if rec.Fallback != "" {
+		fb := rec.Fallback
+		r.Fallback = &fb
 	}
 	if out != "" {
 		sum := sha256.Sum256([]byte(out))

@@ -99,4 +99,9 @@ Claude Code keeps each account in its own directory, chosen with `CLAUDE_CONFIG_
 
 ## resolution
 
-`fallback` and `allow_billing_class_change` are reserved. rbridge picks the first available provider that meets a task's requirements and never replaces a provider the task names.
+| Key | Default | Meaning |
+|---|---|---|
+| `fallback` | `denied` | `allowed` lets a task move to another provider when its provider is unavailable, cannot be signed in, or fails to start. Bad input, skill and policy errors never cause a move |
+| `allow_billing_class_change` | `false` | Let a fallback move to a provider with a different billing class (subscription, API key, local). Without it the move happens only between providers whose class rbridge knows and finds equal |
+
+Without `--provider`, rbridge picks the first available provider in `providers.order` that meets the task's requirements; that is a choice, not a fallback. Every fallback is shown as a warning notice and recorded in the session (`fallback`) and the audit log.
