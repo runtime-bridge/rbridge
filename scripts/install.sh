@@ -19,9 +19,25 @@ case "$os" in linux|darwin) ;; *) echo "rbridge install: unsupported OS $os; dow
 arch=$(uname -m)
 case "$arch" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) echo "rbridge install: unsupported architecture $arch" >&2; exit 1 ;; esac
 
+# Without a published release, Go can build the latest source instead.
+from_source() {
+  if command -v go >/dev/null 2>&1; then
+    echo "no rbridge release is published yet; building the latest source with Go"
+    mkdir -p "$dir"
+    GOBIN="$dir" CGO_ENABLED=0 go install "github.com/$repo/cmd/rbridge@latest"
+    echo "installed $dir/rbridge"
+    case ":$PATH:" in *":$dir:"*) ;; *) echo "add $dir to your PATH to run rbridge" ;; esac
+    "$dir/rbridge" version
+    exit 0
+  fi
+  echo "rbridge install: no release is published yet. Install Go 1.25 or later and run this script again," >&2
+  echo "or build from source: git clone https://github.com/$repo && cd rbridge && make build" >&2
+  exit 1
+}
+
 if [ -z "$version" ]; then
-  version=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
-  [ -n "$version" ] || { echo "rbridge install: could not find the latest release" >&2; exit 1; }
+  version=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1) || true
+  [ -n "$version" ] || from_source
 fi
 number=${version#v}
 archive="rbridge_${number}_${os}_${arch}.tar.gz"
