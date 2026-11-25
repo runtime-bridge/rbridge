@@ -54,3 +54,29 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make cross
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: make build fakeagent
+      - run: go test ./examples/...
+      - name: python-security-review
+        working-directory: examples/python-security-review
+        run: |
+          python -m pip install git+https://github.com/runtime-bridge/rbridge-sdk-python
+          python -m unittest test_review
+      - name: ts-ops-check
+        working-directory: examples/ts-ops-check
+        run: |
+          npm install --no-audit --no-fund
+          npm test

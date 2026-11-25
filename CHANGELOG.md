@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Examples: `go-release-notes` (embedded Go library), `python-security-review` (Python SDK) and `ts-ops-check` (Node.js SDK), each with its own skill and a smoke test in CI. The SDKs gain calls to add, trust and search skills.
+
 - Optional OS sandbox on Linux (`--sandbox files|full`, `sandbox.mode`, `policy.custom.sandbox`): bubblewrap when it works, Docker otherwise. Only the workspace, the session folder and the runtime's own folders are writable; `full` also removes the network. Terminal commands run in the same sandbox. The enforcement notice, session record and audit log show the engine and mode, and a task that asks for a sandbox fails rather than running without one.
 
 - Model servers: `ollama` is built in, and any Ollama or OpenAI-compatible server on this machine can be added with `integration: model-server`. They generate text only, refuse skills and MCP servers, report usage, and are used only when a task names them, never in place of an agent runtime.

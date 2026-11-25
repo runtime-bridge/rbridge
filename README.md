@@ -145,6 +145,10 @@ res, err := c.Run(ctx, task, bridge.WithApprover(decide))
 
 The HTTP API listens on 127.0.0.1 only, needs the token from `daemon.token` in the runtime directory, refuses browser origins that are not listed in `daemon.http.allowed_origins`, and streams events as Server-Sent Events with replay. Each application names itself with `X-Rbridge-Client` (HTTP) or in `initialize` (IPC) and sees only its own sessions. See `specs/http-api.yaml` and `specs/ipc-protocol.md`.
 
+### Examples
+
+[`examples/`](examples) holds three small programs that use rbridge the way the project intends: a Go backend writing release notes, a Python security review and a Node.js operations check. Each ships its own skill and has a smoke test.
+
 ## Supported runtimes
 
 | Runtime | How rbridge talks to it | Notes |
