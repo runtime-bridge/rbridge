@@ -187,6 +187,15 @@ Configuration is YAML, merged in this order, later layers winning:
 
 The system file can list `locked` keys that the user and project layers cannot change. Unknown keys are an error.
 
+`rbridge init` creates rbridge's folders and a commented starter configuration, or installs one you give it after checking it, and can add a folder of skills in the same step. Running it again changes nothing unless you ask:
+
+```sh
+rbridge init                                             # folders and a starter config.yaml
+rbridge init --config ./rbridge.yaml                     # install this file (checked first)
+rbridge init --config ./rbridge.yaml --force             # replace a different one; the old file is kept as config.yaml.bak
+rbridge init --skills ./skills --trust reviewed          # add every skill in ./skills as well
+```
+
 ```yaml
 version: 1
 

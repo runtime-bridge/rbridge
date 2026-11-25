@@ -13,11 +13,12 @@ The script checks the archive against the release's checksums (and its cosign si
 ## 2. Check what rbridge finds
 
 ```sh
+rbridge init
 rbridge doctor
 rbridge providers
 ```
 
-`doctor` prints one line per check with a fix for anything that is missing. `providers show claude-code` (or `opencode`) lists what that runtime can do and where it looks for skills.
+`init` creates rbridge's folders and a commented starter configuration (it is safe to run again; `--config FILE` installs your own). `doctor` prints one line per check with a fix for anything that is missing. `providers show claude-code` (or `opencode`) lists what that runtime can do and where it looks for skills.
 
 ## 3. Run a task
 
