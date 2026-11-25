@@ -238,6 +238,9 @@ func TestNeverTouchesCredentialFiles(t *testing.T) {
 
 	d := f.detector()
 	for _, m := range registry.BuiltIns() {
+		if m.Integration == domain.IntegrationModelServer {
+			continue // reached over HTTP; detection reads no files
+		}
 		info := d.Detect(context.Background(), m, config.ProviderEntry{})
 		if info.Health != domain.HealthAvailable && info.Health != domain.HealthNeedsAPIKey {
 			t.Fatalf("%s: %+v", m.ID, info)
@@ -317,4 +320,23 @@ func TestAPIKeyGate(t *testing.T) {
 			t.Fatalf("%s with key: %+v", m.ID, info)
 		}
 	}
+}
+
+func TestServerURL(t *testing.T) {
+	m := registry.Ollama()
+	env := map[string]string{}
+	d := &Detector{Getenv: func(k string) string { return env[k] }}
+	check := func(entry config.ProviderEntry, want string, ok bool) {
+		t.Helper()
+		got, err := d.ServerURL(m, entry)
+		if (err == nil) != ok || got != want {
+			t.Errorf("got %q %v, want %q", got, err, want)
+		}
+	}
+	check(config.ProviderEntry{}, "http://127.0.0.1:11434", true)
+	env["OLLAMA_HOST"] = "0.0.0.0:9999"
+	check(config.ProviderEntry{}, "http://127.0.0.1:9999", true)
+	check(config.ProviderEntry{URL: "http://localhost:7000"}, "http://localhost:7000", true)
+	env["OLLAMA_HOST"] = "http://10.0.0.8:11434"
+	check(config.ProviderEntry{}, "", false)
 }

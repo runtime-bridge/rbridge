@@ -328,7 +328,7 @@ func TestConnectMatchesEmbedded(t *testing.T) {
 	c = r
 	defer c.Close()
 	ps, err := c.Providers(ctx, false)
-	if err != nil || len(ps) != 5 {
+	if err != nil || len(ps) != 6 {
 		t.Fatalf("providers %+v %v", ps, err)
 	}
 	var mu sync.Mutex

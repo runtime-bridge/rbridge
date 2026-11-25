@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Model servers: `ollama` is built in, and any Ollama or OpenAI-compatible server on this machine can be added with `integration: model-server`. They generate text only, refuse skills and MCP servers, report usage, and are used only when a task names them, never in place of an agent runtime.
+
 - `resolution.fallback` and `resolution.allow_billing_class_change` now work: with fallback allowed, a task whose provider is unavailable or fails to start moves to the next provider of the same billing class, and the move is shown as a notice and recorded in the session and the audit log.
 
 - Measured skill compatibility: each session records, per skill and runtime, the delivery mode, runtime version, turn outcomes and whether the runtime was seen opening the skill. `rbridge skills show` reports it for the installed version.

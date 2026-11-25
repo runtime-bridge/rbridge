@@ -153,6 +153,7 @@ The HTTP API listens on 127.0.0.1 only, needs the token from `daemon.token` in t
 | Gemini CLI | ACP (`gemini --acp`) | API key by default; `providers.gemini-cli.allow_account_login` to opt in |
 | Claude ACP adapter | ACP through `claude-agent-acp` | API key or cloud provider only |
 | Any ACP agent | ACP, declared in config | Capabilities come from the agent's handshake |
+| Ollama, or any OpenAI-compatible server on this machine | HTTP, text only | Used only when a task names it (`--provider ollama --model qwen3:8b`). No tools, files, commands or skills; rbridge keeps the conversation for the session. For agent work on a local model, use OpenCode with an Ollama model |
 
 SDKs for other languages: [rbridge-sdk-ts](https://github.com/runtime-bridge/rbridge-sdk-ts) (Node.js) and [rbridge-sdk-python](https://github.com/runtime-bridge/rbridge-sdk-python). Other agents can use rbridge as an MCP server: `rbridge mcp`.
 

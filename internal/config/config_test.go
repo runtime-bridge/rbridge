@@ -117,14 +117,20 @@ func TestUnknownKeyRejected(t *testing.T) {
 
 func TestValidation(t *testing.T) {
 	cases := map[string]string{
-		"bad profile":    "policy:\n  default_profile: yolo\n",
-		"relative pin":   "providers:\n  claude-code:\n    executable: bin/claude\n",
-		"bad id":         "providers:\n  order: [Claude_Code]\n",
-		"custom no cmd":  "providers:\n  custom:\n    - id: mine\n",
-		"custom dup":     "providers:\n  custom:\n    - {id: a, launch: {command: /x}}\n    - {id: a, launch: {command: /y}}\n",
-		"zero timeout":   "execution:\n  task_timeout: 0s\n",
-		"abs skills dir": "skills:\n  project_dir: " + filepath.ToSlash(absPath("abs")) + "\n",
-		"bad fallback":   "resolution:\n  fallback: maybe\n",
+		"bad profile":     "policy:\n  default_profile: yolo\n",
+		"relative pin":    "providers:\n  claude-code:\n    executable: bin/claude\n",
+		"bad id":          "providers:\n  order: [Claude_Code]\n",
+		"custom no cmd":   "providers:\n  custom:\n    - id: mine\n",
+		"custom dup":      "providers:\n  custom:\n    - {id: a, launch: {command: /x}}\n    - {id: a, launch: {command: /y}}\n",
+		"zero timeout":    "execution:\n  task_timeout: 0s\n",
+		"abs skills dir":  "skills:\n  project_dir: " + filepath.ToSlash(absPath("abs")) + "\n",
+		"bad fallback":    "resolution:\n  fallback: maybe\n",
+		"server no url":   "providers:\n  custom:\n    - {id: m, integration: model-server, api: ollama}\n",
+		"server bad api":  "providers:\n  custom:\n    - {id: m, integration: model-server, url: http://127.0.0.1:1, api: grpc}\n",
+		"server skills":   "providers:\n  custom:\n    - {id: m, integration: model-server, url: http://127.0.0.1:1, api: openai, skills_dir: .agents/skills}\n",
+		"bad integration": "providers:\n  custom:\n    - {id: m, integration: rest, launch: {command: /x}}\n",
+		"catalog http":    "skills:\n  catalogs:\n    - {name: c, url: http://example.com/i.json}\n",
+		"skills dir up":   "providers:\n  custom:\n    - {id: m, skills_dir: ../x, launch: {command: /x}}\n",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

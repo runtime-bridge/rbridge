@@ -24,7 +24,7 @@ func TestOrderAndCustom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ids(r); !slices.Equal(got, []string{"opencode", "my-agent", "claude-acp", "claude-code", "codex", "gemini-cli"}) {
+	if got := ids(r); !slices.Equal(got, []string{"opencode", "my-agent", "claude-acp", "claude-code", "codex", "gemini-cli", "ollama"}) {
 		t.Fatalf("order = %v", got)
 	}
 	m, ok := r.Get("my-agent")
@@ -66,7 +66,7 @@ func TestBuiltInCapabilitiesHaveManifestSource(t *testing.T) {
 				t.Errorf("%s: %s source = %s", m.ID, n, c.Source)
 			}
 		}
-		if !m.BuiltIn || m.Class != domain.ClassAgentRuntime {
+		if !m.BuiltIn || (m.Class != domain.ClassAgentRuntime && m.Class != domain.ClassModelServer) {
 			t.Errorf("%s: unexpected class or flag", m.ID)
 		}
 	}

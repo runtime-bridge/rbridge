@@ -35,6 +35,17 @@ type Manifest struct {
 	AccountLoginForbidden bool
 	Limits                []string
 	Notes                 []string
+	// Server is set for model servers, which are reached over HTTP instead
+	// of being started.
+	Server ServerSpec
+}
+
+// ServerSpec is where a model server listens.
+type ServerSpec struct {
+	URL string
+	// URLEnv names a variable that overrides URL, such as OLLAMA_HOST.
+	URLEnv string
+	API    string // "ollama" or "openai"
 }
 
 // DetectSpec says where to look for the runtime and how to ask its version.
@@ -335,7 +346,45 @@ func ClaudeACP() Manifest {
 
 // BuiltIns returns every built-in manifest.
 func BuiltIns() []Manifest {
-	return []Manifest{ClaudeCode(), OpenCode(), Codex(), GeminiCLI(), ClaudeACP()}
+	return []Manifest{ClaudeCode(), OpenCode(), Codex(), GeminiCLI(), ClaudeACP(), Ollama()}
+}
+
+// modelServerCaps are what every model server offers through rbridge.
+func modelServerCaps() domain.CapabilitySet {
+	return caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
+		domain.CapStreaming:          yes("streamed tokens"),
+		domain.CapSessionsPersistent: yes("history kept by rbridge for the session"),
+		domain.CapSessionsResume:     no(),
+		domain.CapSessionsLoad:       no(),
+		domain.CapCancel:             yes("closes the request"),
+		domain.CapSkills:             no(),
+		domain.CapMCPStdio:           no(),
+		domain.CapFilesystem:         no(),
+		domain.CapShell:              no(),
+		domain.CapApprovals:          no(),
+		domain.CapStructuredOutput:   partial("JSON schema passed to the server; models may not follow it"),
+		domain.CapPromptImage:        no(),
+		domain.CapOffline:            yes("local model"),
+		domain.CapUsage:              yes("token counts from the server"),
+	})
+}
+
+// Ollama is a local Ollama server, used for text generation only.
+func Ollama() Manifest {
+	return Manifest{
+		ID:           "ollama",
+		DisplayName:  "Ollama (text only)",
+		Class:        domain.ClassModelServer,
+		Integration:  domain.IntegrationModelServer,
+		BuiltIn:      true,
+		Server:       ServerSpec{URL: "http://127.0.0.1:11434", URLEnv: "OLLAMA_HOST", API: "ollama"},
+		Capabilities: modelServerCaps(),
+		Limits: []string{
+			"Text generation only: no tools, files, commands or skills.",
+			"Used only when a task names it; never chosen in place of an agent runtime.",
+		},
+		Notes: []string{"For agent work with a local model, use OpenCode configured with an Ollama model."},
+	}
 }
 
 // FromCustom turns a configured custom ACP agent into a manifest. Its
@@ -344,6 +393,14 @@ func FromCustom(c config.CustomProvider) Manifest {
 	name := c.DisplayName
 	if name == "" {
 		name = c.ID
+	}
+	if c.Integration == "model-server" {
+		return Manifest{
+			ID: c.ID, DisplayName: name, Class: domain.ClassModelServer, Integration: domain.IntegrationModelServer,
+			Server:       ServerSpec{URL: c.URL, API: c.API},
+			Capabilities: modelServerCaps(),
+			Limits:       []string{"Text generation only: no tools, files, commands or skills."},
+		}
 	}
 	m := Manifest{
 		ID:          c.ID,

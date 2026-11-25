@@ -51,6 +51,8 @@ type ProviderEntry struct {
 	Args []string `yaml:"args"`
 	// Model is used when a task does not choose one.
 	Model string `yaml:"model"`
+	// URL overrides a model server's address (for example ollama).
+	URL string `yaml:"url"`
 	// AllowAccountLogin lets rbridge use a runtime whose terms make API keys
 	// the safe default, with the user's own account login instead.
 	AllowAccountLogin bool `yaml:"allow_account_login"`
@@ -86,6 +88,10 @@ type CustomProvider struct {
 	// .agents/skills. When set, rbridge delivers a task's skills by linking
 	// them there for the session.
 	SkillsDir string `yaml:"skills_dir"`
+	// URL and API describe a local model server (integration model-server):
+	// API is "ollama" or "openai" (an OpenAI-compatible server).
+	URL string `yaml:"url"`
+	API string `yaml:"api"`
 }
 
 // LaunchConfig is how to start a runtime.
@@ -474,11 +480,23 @@ func (c Config) Validate() error {
 			return fmt.Errorf("providers.custom: duplicate id %q", p.ID)
 		}
 		seen[p.ID] = true
-		if p.Integration != "" && p.Integration != "acp" {
-			return fmt.Errorf("providers.custom.%s: integration must be acp", p.ID)
-		}
-		if p.Launch.Command == "" {
-			return fmt.Errorf("providers.custom.%s: launch.command is required", p.ID)
+		switch p.Integration {
+		case "", "acp":
+			if p.Launch.Command == "" {
+				return fmt.Errorf("providers.custom.%s: launch.command is required", p.ID)
+			}
+		case "model-server":
+			if p.URL == "" {
+				return fmt.Errorf("providers.custom.%s: url is required for a model server", p.ID)
+			}
+			if p.API != "ollama" && p.API != "openai" {
+				return fmt.Errorf("providers.custom.%s: api must be ollama or openai", p.ID)
+			}
+			if p.SkillsDir != "" {
+				return fmt.Errorf("providers.custom.%s: a model server cannot use skills", p.ID)
+			}
+		default:
+			return fmt.Errorf("providers.custom.%s: integration must be acp or model-server", p.ID)
 		}
 		if d := p.SkillsDir; d != "" && (filepath.IsAbs(d) || strings.HasPrefix(d, "/") || slices.Contains(strings.Split(filepath.ToSlash(d), "/"), "..")) {
 			return fmt.Errorf("providers.custom.%s: skills_dir must be a path inside the project, such as .agents/skills", p.ID)

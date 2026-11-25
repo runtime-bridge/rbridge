@@ -233,6 +233,11 @@ type Control struct {
 func Enforcement(p Profile, integration domain.Integration) []Control {
 	var out []Control
 	add := func(name, status, detail string) { out = append(out, Control{name, status, detail}) }
+	if integration == domain.IntegrationModelServer {
+		add("tools", "enforced", "a model server generates text only; it cannot read or change files, run commands or fetch anything")
+		add("network", "enforced", "prompts go only to the model server on this machine")
+		return out
+	}
 	add("environment", "enforced", "runtime starts with an allowlisted environment")
 	add("process lifetime", "enforced", "timeouts and process tree termination")
 	add("skill scripts", "enforced", "scripts are not delivered unless trust allows them")

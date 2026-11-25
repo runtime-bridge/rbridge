@@ -24,6 +24,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/process"
 	"github.com/runtime-bridge/rbridge/internal/providers/acp"
 	"github.com/runtime-bridge/rbridge/internal/providers/claudeheadless"
+	"github.com/runtime-bridge/rbridge/internal/providers/modelserver"
 	"github.com/runtime-bridge/rbridge/internal/providers/registry"
 	"github.com/runtime-bridge/rbridge/internal/redact"
 	"github.com/runtime-bridge/rbridge/internal/skills/deliver"
@@ -149,6 +150,15 @@ func taskReqs(t domain.Task) []domain.CapabilityName {
 func (s *Service) usable(ctx context.Context, t domain.Task, m registry.Manifest) (ProviderStatus, string) {
 	if m.Integration != domain.IntegrationACP && m.Integration != domain.IntegrationClaudeHeadless && m.Integration != domain.IntegrationModelServer {
 		return ProviderStatus{}, "cannot run tasks"
+	}
+	if m.Class == domain.ClassModelServer {
+		// Model servers are never offered in place of an agent runtime.
+		if t.Provider != m.ID {
+			return ProviderStatus{}, "a model server is used only when a task names it"
+		}
+		if len(t.Skills) > 0 || len(t.MCPServers) > 0 {
+			return ProviderStatus{}, "a model server generates text only and cannot use skills or MCP servers"
+		}
 	}
 	st, err := s.status(ctx, m, false)
 	if err != nil {
@@ -475,6 +485,8 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		ps, err = acp.Open(ctx, m.Capabilities, acp.Launch{Args: s.launchArgs(m), ClientName: "rbridge", ClientVersion: buildinfo.Get().Version}, opts, seq)
 	case domain.IntegrationClaudeHeadless:
 		ps, err = claudeheadless.Open(ctx, m.Capabilities, s.launchArgs(m), opts, seq)
+	case domain.IntegrationModelServer:
+		ps, err = modelserver.Open(ctx, modelserver.Server{URL: st.Runtime.Executable, API: modelserver.API(m.Server.API)}, nil, m.Capabilities, opts, seq)
 	default:
 		err = domain.Errorf(domain.ErrCapabilityUnavailable, "%s cannot run tasks", m.ID)
 	}

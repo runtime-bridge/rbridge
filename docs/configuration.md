@@ -18,9 +18,10 @@ rbridge reads YAML from these layers, later ones winning; maps merge and lists a
 | `<id>.enabled` | `true` | Turn a provider off |
 | `<id>.executable` | detected | Absolute path to pin one installation |
 | `<id>.model` | runtime default | Model used when a task does not choose one |
+| `<id>.url` | `OLLAMA_HOST`, then `http://127.0.0.1:11434` | Address of a model server such as `ollama`; must be on this machine |
 | `<id>.args` | manifest | Replace the launch arguments (for example `--experimental-acp` for older Gemini CLI) |
 | `<id>.allow_account_login` | `false` | Use an account login for providers that need an API key by default (Gemini CLI). Ignored for `claude-acp` |
-| `custom` | `[]` | ACP agents: `id`, `display_name`, `launch.command`, `launch.args`, `launch.env_passthrough`, `version_args`, `skills_dir` (project folder the agent reads skills from, such as `.agents/skills`; enables per-session skills) |
+| `custom` | `[]` | ACP agents: `id`, `display_name`, `launch.command`, `launch.args`, `launch.env_passthrough`, `version_args`, `skills_dir` (project folder the agent reads skills from, such as `.agents/skills`; enables per-session skills). A local model server instead takes `integration: model-server`, `url` (a loopback address) and `api` (`ollama` or `openai`) |
 
 Built-in providers: `claude-code`, `opencode`, `codex` (codex-acp), `gemini-cli`, `claude-acp` (API key only).
 

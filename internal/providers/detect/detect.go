@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/config"
 	"github.com/runtime-bridge/rbridge/internal/domain"
 	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/providers/modelserver"
 	"github.com/runtime-bridge/rbridge/internal/providers/registry"
 )
 
@@ -51,6 +53,54 @@ type Detector struct {
 	EnvAllowlist []string
 	Timeout      time.Duration
 	Now          func() time.Time
+	// HTTP probes model servers; nil uses a client with Timeout.
+	HTTP *http.Client
+}
+
+// ServerURL is the address rbridge uses for a model server: the configured
+// url, then the manifest's variable (such as OLLAMA_HOST), then its default.
+func (d *Detector) ServerURL(m registry.Manifest, entry config.ProviderEntry) (string, error) {
+	raw := m.Server.URL
+	if m.Server.URLEnv != "" && d.Getenv != nil {
+		if v := d.Getenv(m.Server.URLEnv); v != "" {
+			raw = v
+		}
+	}
+	if entry.URL != "" {
+		raw = entry.URL
+	}
+	return modelserver.NormalizeURL(raw)
+}
+
+func (d *Detector) detectServer(ctx context.Context, m registry.Manifest, entry config.ProviderEntry, info domain.RuntimeInfo) domain.RuntimeInfo {
+	info.AuthMode = domain.AuthLocal
+	u, err := d.ServerURL(m, entry)
+	if err != nil {
+		info.Health = domain.HealthUnhealthy
+		info.Notes = append(info.Notes, err.Error())
+		return info
+	}
+	info.Executable = u
+	client := d.HTTP
+	if client == nil {
+		timeout := d.Timeout
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		client = &http.Client{Timeout: timeout}
+	}
+	ok, version, note := modelserver.Probe(ctx, client, modelserver.Server{URL: u, API: modelserver.API(m.Server.API)})
+	switch {
+	case ok:
+		info.Health, info.Version = domain.HealthAvailable, version
+	case strings.HasPrefix(note, "no server answers"):
+		info.Health = domain.HealthMissing
+		info.Notes = append(info.Notes, note)
+	default:
+		info.Health = domain.HealthUnhealthy
+		info.Notes = append(info.Notes, note)
+	}
+	return info
 }
 
 // Detect inspects one provider. It never returns an error: problems are
@@ -65,6 +115,9 @@ func (d *Detector) Detect(ctx context.Context, m registry.Manifest, entry config
 	if !entry.IsEnabled() {
 		info.Health = domain.HealthDisabled
 		return info
+	}
+	if m.Integration == domain.IntegrationModelServer {
+		return d.detectServer(ctx, m, entry, info)
 	}
 
 	var candidates []string
