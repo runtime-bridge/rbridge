@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -136,5 +138,23 @@ func TestElicitationThroughService(t *testing.T) {
 	}
 	if res, _ := h.svc().Run(ctx, task, RunOptions{}); res.Output != "declined" {
 		t.Fatalf("no elicitor: %q", res.Output)
+	}
+}
+
+func TestSymlinkedWorkspace(t *testing.T) {
+	h := newRunHarness(t)
+	h.env[fakeacp.EnvScenario] = "permission"
+	real := h.workspace()
+	link := filepath.Join(t.TempDir(), "via-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.svc().Run(context.Background(), domain.Task{Workspace: link, Prompt: domain.Text("write"), Provider: "opencode", Profile: "controlled"},
+		RunOptions{Approver: domain.ApproverFunc(func(_ context.Context, r domain.ApprovalRequest) domain.ApprovalDecision { return r.AllowOnce("user") })})
+	if err != nil || res.Output != "allowed" {
+		t.Fatalf("a workspace reached through a link must accept its own files: %+v %v", res, err)
+	}
+	if _, err := os.Stat(filepath.Join(real, "notes.txt")); err != nil {
+		t.Fatal(err)
 	}
 }

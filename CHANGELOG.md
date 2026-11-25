@@ -6,6 +6,7 @@
 - Native runtime modes and settings for ACP agents: `run --mode`, chat `/modes`, `/mode`, `/options`, `/set`, daemon `sessions.modes`, `sessions.set_mode`, `sessions.options`, `sessions.set_option`, and the same in the Go, Node.js and Python clients. New event `mode.updated`.
 - Questions a runtime asks the user (forms and URLs) reach the caller: a prompt on the terminal, `bridge.WithInput`, `onInput` and `on_input` in the SDKs, and `input.required` with `inputs.answer` in the daemon. Without a handler they are declined.
 - An agent answering with a different ACP protocol version fails with `provider_protocol_error`.
+- A workspace reached through a symbolic link (such as macOS temp folders under `/var`) is resolved before policy applies, so the runtime's own files in it are no longer refused as outside the workspace.
 
 - Several Claude Code accounts on one machine: each becomes provider `claude-code-<name>`, found from `claude-<name>` wrapper scripts and `~/.claude-<name>` directories or declared in config, and started through its wrapper when it has one. `claude-code` is always `~/.claude` and no longer follows the caller's `CLAUDE_CONFIG_DIR`.
 

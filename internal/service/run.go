@@ -206,6 +206,11 @@ func (s *Service) OpenSession(ctx context.Context, t domain.Task, ro RunOptions)
 	if fi, err := os.Stat(t.Workspace); err != nil || !fi.IsDir() {
 		return nil, domain.Errorf(domain.ErrInvalidInput, "workspace %s is not a directory", t.Workspace)
 	}
+	// Runtimes and the file service see resolved paths (on macOS /var is a
+	// link to /private/var), so policy must compare against the same form.
+	if real, err := filepath.EvalSymlinks(t.Workspace); err == nil {
+		t.Workspace = real
+	}
 	m, st, err := s.resolve(ctx, t)
 	if err != nil {
 		return nil, err
