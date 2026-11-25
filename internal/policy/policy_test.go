@@ -3,6 +3,7 @@ package policy
 import (
 	"encoding/json"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/runtime-bridge/rbridge/internal/domain"
@@ -48,9 +49,17 @@ func TestBuiltinProfiles(t *testing.T) {
 	}
 }
 
+// root is an absolute filesystem root on any platform.
+func root() string {
+	if runtime.GOOS == "windows" {
+		return `C:\`
+	}
+	return "/"
+}
+
 func TestPathRules(t *testing.T) {
-	ws := filepath.FromSlash("/work/proj")
-	skill := filepath.FromSlash("/run/rbridge/sessions/s1/skills-session/.claude/skills/sec")
+	ws := filepath.Join(root(), "work", "proj")
+	skill := filepath.Join(root(), "run", "rbridge", "sessions", "s1", "skills-session", ".claude", "skills", "sec")
 	ctx := Context{Workspace: ws, Skills: map[string]domain.TrustState{skill: domain.TrustReviewed}}
 	p, _ := Builtin("standard")
 	check := func(kind, path string, want Action) {
@@ -59,14 +68,14 @@ func TestPathRules(t *testing.T) {
 			t.Errorf("%s %s: got %s (%s) want %s", kind, path, got, why, want)
 		}
 	}
-	check("edit", filepath.FromSlash("/etc/passwd"), Deny)
+	check("edit", filepath.Join(root(), "etc", "passwd"), Deny)
 	check("edit", filepath.Join(ws, "..", "other", "x"), Deny)
 	check("edit", filepath.Join(skill, "SKILL.md"), Deny)
 	check("read", filepath.Join(skill, "references", "checklist.md"), Allow)
-	check("read", filepath.FromSlash("/etc/hosts"), Ask)
+	check("read", filepath.Join(root(), "etc", "hosts"), Ask)
 	check("edit", "relative/inside.go", Allow)
 	obs, _ := Builtin("observe")
-	if got, _ := obs.Decide(req("read", map[string]any{"path": "/etc/hosts"}), ctx); got != Deny {
+	if got, _ := obs.Decide(req("read", map[string]any{"path": filepath.Join(root(), "etc", "hosts")}), ctx); got != Deny {
 		t.Errorf("observe outside read: %s", got)
 	}
 }

@@ -88,14 +88,23 @@ func TestDiscoverSwitches(t *testing.T) {
 }
 
 func TestExpand(t *testing.T) {
-	cases := map[string]string{"~/.claude-a": "/h/.claude-a", "$HOME/b": "/h/b", "${HOME}/c": "/h/c", "/abs": "/abs"}
+	r := "/"
+	if runtime.GOOS == "windows" {
+		r = `C:\`
+	}
+	home := filepath.Join(r, "h")
+	abs := filepath.Join(r, "abs")
+	cases := map[string]string{
+		"~/.claude-a": filepath.Join(home, ".claude-a"), "$HOME/b": filepath.Join(home, "b"),
+		"${HOME}/c": filepath.Join(home, "c"), abs: abs,
+	}
 	for in, want := range cases {
-		if got, ok := Expand(in, "/h"); !ok || got != filepath.FromSlash(want) {
+		if got, ok := Expand(in, home); !ok || got != want {
 			t.Errorf("%s -> %s %v", in, got, ok)
 		}
 	}
 	for _, bad := range []string{"relative", "$OTHER/x", "`cmd`"} {
-		if _, ok := Expand(bad, "/h"); ok {
+		if _, ok := Expand(bad, home); ok {
 			t.Errorf("%s accepted", bad)
 		}
 	}

@@ -3,6 +3,7 @@ package audit
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -26,7 +27,8 @@ func TestAppendReadAndRetention(t *testing.T) {
 		t.Fatalf("%+v %v", recs, err)
 	}
 	fi, _ := os.Stat(filepath.Join(dir, "2026-11.jsonl"))
-	if fi.Mode().Perm() != 0o600 {
+	// Windows has no Unix permission bits; access there follows the user profile's ACL.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", fi.Mode().Perm())
 	}
 	if recs, _ := l.Read(now.Add(time.Hour)); len(recs) != 0 {

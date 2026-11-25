@@ -123,7 +123,7 @@ func TestValidation(t *testing.T) {
 		"custom no cmd":  "providers:\n  custom:\n    - id: mine\n",
 		"custom dup":     "providers:\n  custom:\n    - {id: a, launch: {command: /x}}\n    - {id: a, launch: {command: /y}}\n",
 		"zero timeout":   "execution:\n  task_timeout: 0s\n",
-		"abs skills dir": "skills:\n  project_dir: /abs\n",
+		"abs skills dir": "skills:\n  project_dir: " + filepath.ToSlash(absPath("abs")) + "\n",
 		"bad fallback":   "resolution:\n  fallback: maybe\n",
 	}
 	for name, body := range cases {
@@ -233,4 +233,12 @@ func TestResolvePathsWindows(t *testing.T) {
 	if got != want {
 		t.Errorf("got %+v\nwant %+v", got, want)
 	}
+}
+
+// absPath is an absolute path on any platform: /name, or C:\name on Windows.
+func absPath(name string) string {
+	if runtime.GOOS == "windows" {
+		return `C:\` + name
+	}
+	return "/" + name
 }
