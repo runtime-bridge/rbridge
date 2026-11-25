@@ -88,6 +88,8 @@ Every task runs under a profile (`--profile`, default `standard`):
 
 Writes outside the workspace are always denied, delivered skills are read-only, and a reviewed skill's scripts are asked about each time. With `observe`, Claude Code also has its write, shell and web tools removed. A request that nobody answers within `policy.approval_timeout` is denied.
 
+ACP agents are offered terminals run by rbridge whenever the profile does not deny commands. Each command goes through the profile, runs inside the workspace with the session's filtered environment, is killed after `execution.command_timeout`, keeps at most `execution.max_output_bytes` of output, and is killed with its children when the session ends. An agent's own built-in shell still relies on the agent asking permission.
+
 rbridge does not sandbox the runtime. Each session starts with a notice saying which controls rbridge enforces, which rely on the runtime asking permission, and which are not enforced (network is never enforced). Set `policy.require_enforced: [network]` to refuse tasks whose profile wants something rbridge cannot enforce. `rbridge audit` lists one record per session: profile, approvals and gaps, with no prompts or outputs.
 
 ### Go
