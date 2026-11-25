@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- An everyday API in both SDKs, in the shape of the familiar model SDKs with the runtime in place of the model: `Rbridge` (and `AsyncRbridge` in Python) with `run(prompt, runtime=...)`, `stream=True` for text as it arrives, `chat()` for a conversation, `run_many` / `runMany` for several at once, `schema` for parsed JSON, skill folders by path, permission handling as one option, and a spending limit. The lower-level clients are unchanged underneath.
+
 - Easier to use: a mistyped command, subcommand or provider gets a "did you mean" and the list of choices, `ls`, `rm` and `info` work as aliases, and `RBRIDGE_HOME` may be relative (such as `.rbridge`). `rbridge daemon start --exit-when-idle 30m` stops the daemon once nothing has used it for that long. The SDKs start a daemon when none is running (one that stops after 30 idle minutes; `start=False` turns this off), take a plain prompt as a task, and default the workspace to the current folder, resolving relative paths.
 
 - `rbridge uninstall` lists the program and its data folders and removes them with `--yes` (and `--purge` for the data); for a copy that came with an SDK it names the package manager instead.
