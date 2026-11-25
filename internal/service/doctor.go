@@ -157,6 +157,16 @@ func (s *Service) Doctor(ctx context.Context) Report {
 	if available == 0 {
 		add(Check{Name: "runtimes", Status: CheckFail, Detail: "no agent runtime is available", Fix: "Install at least one runtime; see the provider lines above."})
 	}
+	if e, notes := s.engine(ctx); e != nil {
+		add(Check{Name: "sandbox", Status: CheckOK, Detail: e.Name() + " can run sandboxed tasks (sandbox.mode " + s.cfg.Sandbox.Mode + ")"})
+	} else {
+		status := CheckOK
+		if s.cfg.Sandbox.Mode != "off" && s.cfg.Sandbox.Mode != "" {
+			status = CheckFail
+		}
+		add(Check{Name: "sandbox", Status: status, Detail: "no sandbox engine works here: " + strings.Join(notes, "; "),
+			Fix: "Install bubblewrap (and allow it unprivileged user namespaces) or Docker, or set sandbox.mode: off."})
+	}
 	return r
 }
 

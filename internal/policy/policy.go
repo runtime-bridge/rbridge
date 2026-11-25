@@ -230,7 +230,17 @@ type Control struct {
 // Enforcement reports, for a profile and integration, which controls rbridge
 // enforces itself, which rely on the runtime asking permission, and which are
 // not enforced at all.
-func Enforcement(p Profile, integration domain.Integration) []Control {
+// Sandbox describes the OS sandbox a session runs in, if any.
+type Sandbox struct {
+	Engine string // "bubblewrap", "docker" or "" for none
+	Mode   string // "files" or "full"
+}
+
+func (s Sandbox) on() bool { return s.Engine != "" && (s.Mode == "files" || s.Mode == "full") }
+
+// Enforcement reports, for one session, which controls rbridge enforces,
+// which rely on the runtime asking, and which are not enforced.
+func Enforcement(p Profile, integration domain.Integration, sb Sandbox) []Control {
 	var out []Control
 	add := func(name, status, detail string) { out = append(out, Control{name, status, detail}) }
 	if integration == domain.IntegrationModelServer {
@@ -241,9 +251,14 @@ func Enforcement(p Profile, integration domain.Integration) []Control {
 	add("environment", "enforced", "runtime starts with an allowlisted environment")
 	add("process lifetime", "enforced", "timeouts and process tree termination")
 	add("skill scripts", "enforced", "scripts are not delivered unless trust allows them")
+	if sb.on() {
+		add("file writes", "enforced", sb.Engine+" sandbox: only the workspace, the session folder and the runtime's own folders are writable; permission requests still go through the profile")
+	}
 	switch integration {
 	case domain.IntegrationACP:
-		add("file writes", "runtime", "fs/write_text_file is checked by rbridge; the agent's own write tools rely on it asking permission")
+		if !sb.on() {
+			add("file writes", "runtime", "fs/write_text_file is checked by rbridge; the agent's own write tools rely on it asking permission")
+		}
 		if p.OffersTerminal() {
 			add("client terminals", "enforced", "commands the agent runs through rbridge terminals are checked, time limited and confined to the workspace")
 			add("commands", "runtime", "the agent's own shell relies on it asking permission")
@@ -254,12 +269,17 @@ func Enforcement(p Profile, integration domain.Integration) []Control {
 		if len(p.ClaudeDisallowed) > 0 {
 			add("disallowed tools", "enforced", "removed with --disallowed-tools: "+strings.Join(p.ClaudeDisallowed, ", "))
 		}
-		add("file writes", "runtime", "Claude Code asks rbridge before edits")
+		if !sb.on() {
+			add("file writes", "runtime", "Claude Code asks rbridge before edits")
+		}
 		add("commands", "runtime", "Claude Code asks rbridge before most shell commands; read-only commands may run without asking")
 	}
-	if p.BlockNetwork {
-		add("network", "not_enforced", "rbridge has no network sandbox; fetch tools are denied by rule, other traffic is not blocked")
-	} else {
+	switch {
+	case sb.on() && sb.Mode == "full":
+		add("network", "enforced", sb.Engine+" sandbox with no network: the runtime cannot reach anything, its model API included")
+	case p.BlockNetwork:
+		add("network", "not_enforced", "no network sandbox for this session (sandbox mode full adds one); fetch tools are denied by rule, other traffic is not blocked")
+	default:
 		add("network", "not_enforced", "not restricted by this profile")
 	}
 	return out

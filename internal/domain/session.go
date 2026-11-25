@@ -75,6 +75,8 @@ type SessionRecord struct {
 	// Fallback says which provider the task moved from, and why, when
 	// resolution.fallback let it move.
 	Fallback string `json:"fallback,omitempty"`
+	// Sandbox is the engine and mode the runtime ran in, such as docker:full.
+	Sandbox string `json:"sandbox,omitempty"`
 }
 
 // Usage is token and cost information when a runtime reports it.

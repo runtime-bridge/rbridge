@@ -105,7 +105,9 @@ Writes outside the workspace are always denied, delivered skills are read-only, 
 
 ACP agents are offered terminals run by rbridge whenever the profile does not deny commands. Each command goes through the profile, runs inside the workspace with the session's filtered environment, is killed after `execution.command_timeout`, keeps at most `execution.max_output_bytes` of output, and is killed with its children when the session ends. An agent's own built-in shell still relies on the agent asking permission.
 
-rbridge does not sandbox the runtime. Each session starts with a notice saying which controls rbridge enforces, which rely on the runtime asking permission, and which are not enforced (network is never enforced). Set `policy.require_enforced: [network]` to refuse tasks whose profile wants something rbridge cannot enforce. `rbridge audit` lists one record per session: profile, approvals and gaps, with no prompts or outputs.
+By default rbridge does not sandbox the runtime. With `--sandbox files` (or `sandbox.mode` in config) the runtime, and every command rbridge runs for it, starts in an OS sandbox where only the workspace, the session folder and the runtime's own state folders are writable; `--sandbox full` also removes all network access, so it suits runtimes on a local model, not cloud ones. rbridge uses bubblewrap when it works and Docker otherwise, on Linux only; a task that asks for a sandbox fails rather than running without one. The sandbox limits writes and network, not reads: a runtime still reads its own sign-in files. `rbridge doctor` shows which engine is available.
+
+Each session starts with a notice saying which controls rbridge enforces, which rely on the runtime asking permission, and which are not enforced (network is enforced only in a full sandbox). Set `policy.require_enforced: [network]` to refuse tasks whose profile wants something rbridge cannot enforce. `rbridge audit` lists one record per session: profile, approvals and gaps, with no prompts or outputs.
 
 ### Go
 

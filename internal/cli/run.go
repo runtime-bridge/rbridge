@@ -38,6 +38,7 @@ type taskFlags struct {
 	profile   string
 	model     string
 	mode      string
+	sandbox   string
 	approve   string
 	schema    string
 	timeout   time.Duration
@@ -51,6 +52,7 @@ func (f *taskFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.workspace, "workspace", "", "project directory the runtime works in (default: current directory)")
 	fs.StringVar(&f.provider, "provider", "", "provider id; default is the first available one that meets the requirements")
 	fs.StringVar(&f.model, "model", "", "model name passed to the runtime")
+	fs.StringVar(&f.sandbox, "sandbox", "", "run the runtime in an OS sandbox: off, files (writes limited to the workspace) or full (and no network); default from config")
 	fs.StringVar(&f.mode, "mode", "", "runtime session mode to start in, for runtimes that offer modes")
 	fs.StringVar(&f.profile, "profile", "", "policy profile: observe, standard, controlled or custom (default from config)")
 	fs.StringVar(&f.approve, "approve", "", "how to answer permission requests: ask, allow or deny (default ask on a terminal, otherwise deny)")
@@ -71,7 +73,7 @@ func (f *taskFlags) task(env Env, prompt string) (domain.Task, error) {
 	if err != nil {
 		return domain.Task{}, err
 	}
-	t := domain.Task{Workspace: ws, Prompt: domain.Text(prompt), Skills: f.skills, Provider: f.provider, Timeout: f.timeout, Profile: f.profile}
+	t := domain.Task{Workspace: ws, Prompt: domain.Text(prompt), Skills: f.skills, Provider: f.provider, Timeout: f.timeout, Profile: f.profile, Sandbox: f.sandbox}
 	for _, r := range f.requires {
 		t.Requirements = append(t.Requirements, domain.CapabilityName(r))
 	}

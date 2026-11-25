@@ -38,6 +38,9 @@ type Manifest struct {
 	// Server is set for model servers, which are reached over HTTP instead
 	// of being started.
 	Server ServerSpec
+	// StateDirs are folders and files the runtime writes to on its own
+	// (sessions, caches, sign-in). A sandbox keeps them writable.
+	StateDirs []string
 }
 
 // ServerSpec is where a model server listens.
@@ -117,6 +120,7 @@ func ClaudeCode() Manifest {
 		DisplayName: "Claude Code",
 		Class:       domain.ClassAgentRuntime,
 		Integration: domain.IntegrationClaudeHeadless,
+		StateDirs:   []string{"~/.claude", "~/.claude.json"},
 		BuiltIn:     true,
 		Detect: DetectSpec{
 			Executables: []string{"claude"},
@@ -170,6 +174,7 @@ func ClaudeAccount(a accounts.Account) Manifest {
 	m.ID = "claude-code-" + a.Name
 	m.DisplayName = "Claude Code (" + a.Name + ")"
 	m.Skills.User = []string{filepath.Join(a.ConfigDir, "skills")}
+	m.StateDirs = []string{a.ConfigDir}
 	m.Notes = []string{"Account " + a.Name + ": " + a.ConfigDir + " (found by " + a.Source + ")."}
 	if a.Launcher != "" {
 		m.Detect = DetectSpec{Executables: []string{a.Launcher}, VersionArgs: []string{"--version"}}
@@ -191,6 +196,7 @@ func OpenCode() Manifest {
 		DisplayName: "OpenCode",
 		Class:       domain.ClassAgentRuntime,
 		Integration: domain.IntegrationACP,
+		StateDirs:   []string{"~/.local/share/opencode", "~/.local/state/opencode", "~/.cache/opencode", "~/.config/opencode"},
 		BuiltIn:     true,
 		Detect: DetectSpec{
 			Executables: []string{"opencode"},
@@ -242,6 +248,7 @@ func GeminiCLI() Manifest {
 		DisplayName: "Gemini CLI",
 		Class:       domain.ClassAgentRuntime,
 		Integration: domain.IntegrationACP,
+		StateDirs:   []string{"~/.gemini"},
 		BuiltIn:     true,
 		Detect: DetectSpec{
 			Executables: []string{"gemini"},
@@ -282,6 +289,7 @@ func Codex() Manifest {
 		DisplayName: "Codex",
 		Class:       domain.ClassAgentRuntime,
 		Integration: domain.IntegrationACP,
+		StateDirs:   []string{"~/.codex"},
 		BuiltIn:     true,
 		Detect: DetectSpec{
 			Executables: []string{"codex-acp"},
@@ -317,6 +325,7 @@ func ClaudeACP() Manifest {
 		DisplayName: "Claude (ACP adapter)",
 		Class:       domain.ClassAgentRuntime,
 		Integration: domain.IntegrationACP,
+		StateDirs:   []string{"~/.claude", "~/.claude.json"},
 		BuiltIn:     true,
 		Detect: DetectSpec{
 			Executables: []string{"claude-agent-acp"},

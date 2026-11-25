@@ -32,13 +32,15 @@ type MCPServer struct {
 
 // Task is one request from an application.
 type Task struct {
-	Workspace    string            `json:"workspace"`
-	Prompt       []ContentBlock    `json:"prompt"`
-	Skills       []string          `json:"skills,omitempty"`
-	Provider     string            `json:"provider,omitempty"`
-	Requirements []CapabilityName  `json:"requirements,omitempty"`
-	Preferences  []CapabilityName  `json:"preferences,omitempty"`
-	Profile      string            `json:"profile,omitempty"`
+	Workspace    string           `json:"workspace"`
+	Prompt       []ContentBlock   `json:"prompt"`
+	Skills       []string         `json:"skills,omitempty"`
+	Provider     string           `json:"provider,omitempty"`
+	Requirements []CapabilityName `json:"requirements,omitempty"`
+	Preferences  []CapabilityName `json:"preferences,omitempty"`
+	Profile      string           `json:"profile,omitempty"`
+	// Sandbox overrides the configured sandbox mode: off, files or full.
+	Sandbox      string            `json:"sandbox,omitempty"`
 	MCPServers   []MCPServer       `json:"mcp_servers,omitempty"`
 	OutputSchema json.RawMessage   `json:"output_schema,omitempty"`
 	Timeout      time.Duration     `json:"timeout,omitempty"`

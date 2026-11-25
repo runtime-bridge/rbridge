@@ -51,7 +51,8 @@ Claude Code keeps each account in its own directory, chosen with `CLAUDE_CONFIG_
 | `custom.rules` | ask for everything | Map of tool kind (`read`, `search`, `think`, `fetch`, `edit`, `delete`, `move`, `execute`, `switch_mode`, `other`) to `allow`, `deny` or `ask` |
 | `custom.outside_read` | `ask` | Reads outside the workspace |
 | `custom.client_fs_write` | `false` | Offer ACP agents rbridge's file write method |
-| `custom.block_network` | `false` | Declare that the profile wants network blocked (reported as not enforced) |
+| `custom.block_network` | `false` | Declare that the profile wants network blocked (enforced only with sandbox `full`) |
+| `custom.sandbox` | `sandbox.mode` | Sandbox mode for the custom profile |
 | `require_enforced` | `[]` | Refuse tasks whose profile wants one of these controls (for example `network`) that rbridge cannot enforce |
 
 ## skills
@@ -97,6 +98,16 @@ Claude Code keeps each account in its own directory, chosen with `CLAUDE_CONFIG_
 | `event_buffer` | `2000` | Events kept per session for replay |
 | `requests_per_second` | `20` | Per client, bursts of twice that |
 | `session_idle_timeout` | `30m` | Close daemon sessions nobody uses |
+
+## sandbox
+
+| Key | Default | Meaning |
+|---|---|---|
+| `mode` | `off` | `files`: only the workspace, the session folder and the runtime's own folders are writable. `full`: the same with no network at all (cloud runtimes cannot reach their API). A task's `--sandbox` wins over this |
+| `engine` | `auto` | `bwrap` (bubblewrap), `docker`, or `auto` to use the first that works. Linux only |
+| `writable` | `[]` | More folders runtimes may change, absolute or starting with `~/` |
+
+A task that asks for a sandbox fails with `policy_unenforceable` when no engine works; it never runs unsandboxed. Ubuntu blocks bubblewrap unless unprivileged user namespaces are allowed for it, in which case `auto` falls back to Docker. With Docker, the runtime runs in a container built from an empty image with the host's system folders and home mounted read-only, as your own user.
 
 ## resolution
 

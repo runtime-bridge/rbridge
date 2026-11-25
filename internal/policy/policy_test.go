@@ -126,7 +126,7 @@ func TestCustomProfile(t *testing.T) {
 
 func TestEnforcement(t *testing.T) {
 	obs, _ := Builtin("observe")
-	c := Enforcement(obs, domain.IntegrationClaudeHeadless)
+	c := Enforcement(obs, domain.IntegrationClaudeHeadless, Sandbox{})
 	found := false
 	for _, x := range c {
 		if x.Name == "disallowed tools" && x.Status == "enforced" {
@@ -140,7 +140,31 @@ func TestEnforcement(t *testing.T) {
 		t.Fatalf("observe wants network blocked, which is not enforced: %v", u)
 	}
 	std, _ := Builtin("standard")
-	if u := Unenforced(std, Enforcement(std, domain.IntegrationACP)); len(u) != 0 {
+	if u := Unenforced(std, Enforcement(std, domain.IntegrationACP, Sandbox{})); len(u) != 0 {
 		t.Fatalf("standard asks for nothing unenforceable: %v", u)
+	}
+}
+
+func TestEnforcementWithSandbox(t *testing.T) {
+	p, _ := Builtin("standard")
+	p.BlockNetwork = true
+	find := func(cs []Control, name string) Control {
+		for _, c := range cs {
+			if c.Name == name {
+				return c
+			}
+		}
+		return Control{}
+	}
+	full := Enforcement(p, domain.IntegrationACP, Sandbox{Engine: "docker", Mode: "full"})
+	if find(full, "network").Status != "enforced" || find(full, "file writes").Status != "enforced" || len(Unenforced(p, full)) != 0 {
+		t.Fatalf("full: %+v", full)
+	}
+	files := Enforcement(p, domain.IntegrationClaudeHeadless, Sandbox{Engine: "bubblewrap", Mode: "files"})
+	if find(files, "file writes").Status != "enforced" || find(files, "network").Status != "not_enforced" {
+		t.Fatalf("files: %+v", files)
+	}
+	if u := Unenforced(p, files); len(u) != 1 || u[0] != "network" {
+		t.Fatalf("unenforced %v", u)
 	}
 }

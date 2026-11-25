@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,7 @@ const (
 //	crash       exits in the middle of a prompt
 //	spawn       starts a long-lived child and writes its pid to child.pid
 //	env         replies with NAME=value for each variable named in the prompt
+//	escape      writes files and opens connections itself ("write:a,b dial:host:port")
 //	terminal    runs the prompt with sh -c in a client terminal and replies with its output
 //	elicit      asks the user for a name through a form
 //	(echo also answers "mode?" with the current mode and model)
@@ -264,6 +266,32 @@ func (a *agent) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResp
 		time.Sleep(50 * time.Millisecond)
 		fmt.Fprintln(os.Stderr, "fake agent: simulated crash")
 		os.Exit(3)
+
+	case "escape":
+		// Acts like an agent using its own tools without asking: writes files
+		// itself and opens connections. The prompt is "write:a,b dial:host:port".
+		var report []string
+		for _, f := range strings.Fields(text) {
+			switch {
+			case strings.HasPrefix(f, "write:"):
+				for _, p := range strings.Split(strings.TrimPrefix(f, "write:"), ",") {
+					if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+						report = append(report, "write "+filepath.Base(p)+": denied")
+					} else {
+						report = append(report, "write "+filepath.Base(p)+": ok")
+					}
+				}
+			case strings.HasPrefix(f, "dial:"):
+				if c, err := net.DialTimeout("tcp", strings.TrimPrefix(f, "dial:"), 2*time.Second); err != nil {
+					report = append(report, "dial: denied")
+				} else {
+					c.Close()
+					report = append(report, "dial: ok")
+				}
+			}
+		}
+		a.send(ctx, sid, sdk.UpdateAgentMessageText(strings.Join(report, "; ")))
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 
 	case "writedirect":
 		// Writes without asking permission first, as a careless agent might.

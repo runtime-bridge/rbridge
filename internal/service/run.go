@@ -67,6 +67,7 @@ type Session struct {
 	runtimeVersion string
 	completed      int
 	failed         int
+	sandboxCleanup func()
 
 	mu     sync.Mutex
 	rec    domain.SessionRecord
@@ -401,7 +402,21 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	if err != nil {
 		return fail(err)
 	}
-	controls := policy.Enforcement(prof, m.Integration)
+	launcher, sbInfo, sbCleanup, err := s.sandboxFor(ctx, m, st, t, prof, rec.ID, scratch)
+	if err != nil {
+		return fail(err)
+	}
+	if sbCleanup != nil {
+		inner := fail
+		fail = func(err error) (*Session, error) {
+			sbCleanup()
+			return inner(err)
+		}
+	}
+	if sbInfo.Engine != "" {
+		rec.Sandbox = sbInfo.Engine + ":" + sbInfo.Mode
+	}
+	controls := policy.Enforcement(prof, m.Integration, sbInfo)
 	unenforced := policy.Unenforced(prof, controls)
 	for _, need := range s.cfg.Policy.RequireEnforced {
 		if slices.Contains(unenforced, need) {
@@ -471,6 +486,9 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		CommandTimeout: s.cfg.Execution.CommandTimeout, MaxOutputBytes: s.cfg.Execution.MaxOutputBytes,
 		Elicitor: ro.Elicitor,
 	}
+	if launcher != nil {
+		opts.Launcher = launcher
+	}
 	if opts.Model == "" {
 		opts.Model = s.cfg.Providers.Settings[m.ID].Model
 		rec.Model = opts.Model
@@ -505,7 +523,7 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	if timeout == 0 {
 		timeout = s.cfg.Execution.TaskTimeout
 	}
-	sess := &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout, gate: g, runtimeVersion: st.Runtime.Version}
+	sess := &Session{svc: s, m: m, ps: ps, sink: seq, scratch: scratch, release: release, rec: rec, timeout: timeout, gate: g, runtimeVersion: st.Runtime.Version, sandboxCleanup: sbCleanup}
 	if ro.Mode != "" {
 		if err := sess.SetMode(ctx, ro.Mode); err != nil {
 			sess.Close(context.WithoutCancel(ctx))
@@ -714,6 +732,9 @@ func (s *Session) Close(ctx context.Context) error {
 	s.closed = true
 	s.mu.Unlock()
 	err := s.ps.Close(ctx)
+	if s.sandboxCleanup != nil {
+		s.sandboxCleanup()
+	}
 	s.sink.turn.Store("")
 	s.sink.Emit(domain.NewEvent(domain.EventSessionClosed, nil))
 	if s.sink.log != nil {
@@ -756,6 +777,7 @@ func (s *Service) writeAudit(rec domain.SessionRecord, sess *Session) {
 		fb := rec.Fallback
 		r.Fallback = &fb
 	}
+	r.Sandbox = rec.Sandbox
 	if out != "" {
 		sum := sha256.Sum256([]byte(out))
 		r.ResultDigest = "sha256:" + hex.EncodeToString(sum[:])

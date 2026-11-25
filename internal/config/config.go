@@ -22,6 +22,7 @@ type Config struct {
 	Version    int              `yaml:"version"`
 	Providers  ProvidersConfig  `yaml:"providers"`
 	Resolution ResolutionConfig `yaml:"resolution"`
+	Sandbox    SandboxConfig    `yaml:"sandbox"`
 	Skills     SkillsConfig     `yaml:"skills"`
 	Policy     PolicyConfig     `yaml:"policy"`
 	Execution  ExecutionConfig  `yaml:"execution"`
@@ -141,6 +142,19 @@ type CustomProfile struct {
 	OutsideRead   string            `yaml:"outside_read"`
 	ClientFSWrite bool              `yaml:"client_fs_write"`
 	BlockNetwork  bool              `yaml:"block_network"`
+	// Sandbox is off, files or full; empty uses sandbox.mode.
+	Sandbox string `yaml:"sandbox"`
+}
+
+// SandboxConfig runs runtimes inside an OS sandbox.
+type SandboxConfig struct {
+	// Mode is off, files (writes limited to the workspace and the runtime's
+	// own folders) or full (files, and no network).
+	Mode string `yaml:"mode"`
+	// Engine is auto, bwrap or docker.
+	Engine string `yaml:"engine"`
+	// Writable lists more folders runtimes may change.
+	Writable []string `yaml:"writable"`
 }
 
 type ExecutionConfig struct {
@@ -199,6 +213,7 @@ func Defaults() Config {
 			Settings: map[string]ProviderEntry{},
 		},
 		Resolution: ResolutionConfig{Fallback: "denied"},
+		Sandbox:    SandboxConfig{Mode: "off", Engine: "auto"},
 		Skills:     SkillsConfig{ProjectDir: ".agents/skills", GitRequirePinnedRevision: true},
 		Policy: PolicyConfig{
 			DefaultProfile:  "standard",
@@ -504,6 +519,19 @@ func (c Config) Validate() error {
 	}
 	if !slices.Contains(profiles, c.Policy.DefaultProfile) {
 		return fmt.Errorf("policy.default_profile must be one of %v", profiles)
+	}
+	for key, v := range map[string]string{"sandbox.mode": c.Sandbox.Mode, "policy.custom.sandbox": c.Policy.Custom.Sandbox} {
+		if v != "" && v != "off" && v != "files" && v != "full" {
+			return fmt.Errorf("%s must be off, files or full", key)
+		}
+	}
+	if e := c.Sandbox.Engine; e != "" && e != "auto" && e != "bwrap" && e != "docker" {
+		return errors.New("sandbox.engine must be auto, bwrap or docker")
+	}
+	for i, w := range c.Sandbox.Writable {
+		if !filepath.IsAbs(w) && !strings.HasPrefix(w, "~/") {
+			return fmt.Errorf("sandbox.writable[%d]: use an absolute path or one starting with ~/", i)
+		}
 	}
 	if c.Resolution.Fallback != "denied" && c.Resolution.Fallback != "allowed" {
 		return errors.New("resolution.fallback must be denied or allowed")

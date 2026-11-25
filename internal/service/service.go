@@ -28,18 +28,19 @@ import (
 
 // Service is the entry point for every interface.
 type Service struct {
-	paths    config.Paths
-	cfg      config.Config
-	layers   []config.LayerInfo
-	registry *registry.Registry
-	detector *detect.Detector
-	store    store.Store
-	getenv   func(string) string
-	environ  func() []string
-	now      func() time.Time
-	slots    chan struct{}
-	redact   *redact.Redactor
-	catalogs catalog.Client
+	paths     config.Paths
+	cfg       config.Config
+	layers    []config.LayerInfo
+	registry  *registry.Registry
+	detector  *detect.Detector
+	store     store.Store
+	getenv    func(string) string
+	environ   func() []string
+	now       func() time.Time
+	slots     chan struct{}
+	redact    *redact.Redactor
+	catalogs  catalog.Client
+	sandboxes sandboxEngines
 }
 
 // Redactor masks secrets in text rbridge stores or logs.

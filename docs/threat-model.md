@@ -1,6 +1,6 @@
 # Threat model
 
-rbridge runs on a developer's machine, starts agent runtimes the user installed, and lets local software give them tasks. It is not a sandbox.
+rbridge runs on a developer's machine, starts agent runtimes the user installed, and lets local software give them tasks. By default it is not a sandbox; `sandbox.mode` adds one (see below).
 
 ## Assets
 
@@ -29,12 +29,13 @@ rbridge runs on a developer's machine, starts agent runtimes the user installed,
 | Web page calling the local API | No token in the page; Origin refused; Host checked against DNS rebinding | Disabled by default |
 | Another local user | Socket and files are owner-only | Root and the same user are trusted |
 | Path traversal and symlink escape | Canonical paths and symlink resolution for every ACP file operation; skill symlinks must stay inside the skill | Runtime's own tools are outside rbridge's view |
+| Runtime acting without asking | Optional OS sandbox (`files`, `full`): writes outside the workspace and the runtime's own folders fail, and `full` cuts the network; terminal commands run in the same sandbox (tested with an agent that tries) | Reads are not limited; the runtime's own state folders stay writable; Linux only |
 | Runaway runtime | Task timeout, idle watchdog, concurrency limit, process tree kill | Resource use while running |
 | Terms violation by design | No credential handling; API key required where providers' terms demand it (`claude-acp`, `gemini-cli` by default) | Terms can change; check `providers show` notes |
 | Supply chain | Two permissive dependencies, licence check in CI, checksums and cosign signatures on releases, install script verifies before writing | Compromise of the release pipeline |
 
 ## Not covered
 
-Network restrictions, CPU and memory limits, and containment of a runtime that acts without asking permission. Run untrusted work in a container or VM if those matter.
+Without a sandbox: network restrictions and containment of a runtime that acts without asking permission. With or without one: CPU and memory limits, reads of files the user can read, and sandboxing on macOS and Windows. Use a VM for work that must not see your files.
 
 Report vulnerabilities as described in `SECURITY.md`.

@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Optional OS sandbox on Linux (`--sandbox files|full`, `sandbox.mode`, `policy.custom.sandbox`): bubblewrap when it works, Docker otherwise. Only the workspace, the session folder and the runtime's own folders are writable; `full` also removes the network. Terminal commands run in the same sandbox. The enforcement notice, session record and audit log show the engine and mode, and a task that asks for a sandbox fails rather than running without one.
+
 - Model servers: `ollama` is built in, and any Ollama or OpenAI-compatible server on this machine can be added with `integration: model-server`. They generate text only, refuse skills and MCP servers, report usage, and are used only when a task names them, never in place of an agent runtime.
 
 - `resolution.fallback` and `resolution.allow_billing_class_change` now work: with fallback allowed, a task whose provider is unavailable or fails to start moves to the next provider of the same billing class, and the move is shown as a notice and recorded in the session and the audit log.

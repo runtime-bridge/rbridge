@@ -39,6 +39,7 @@ type Record struct {
 	Skills       []domain.SkillDelivery `json:"skills,omitempty"`
 	Approvals    []Approval             `json:"approvals,omitempty"`
 	Fallback     *string                `json:"fallback"`
+	Sandbox      string                 `json:"sandbox,omitempty"`
 	Turns        int                    `json:"turns"`
 	StopReason   domain.StopReason      `json:"stop_reason,omitempty"`
 	ErrorCode    domain.ErrorCode       `json:"error_code,omitempty"`
