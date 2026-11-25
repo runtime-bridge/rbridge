@@ -465,3 +465,39 @@ func TestInit(t *testing.T) {
 		t.Fatal("--trust without --skills should fail")
 	}
 }
+
+func TestUninstall(t *testing.T) {
+	f := newFakeCLI(t)
+	home := filepath.Join(f.home, "un")
+	f.vars["RBRIDGE_HOME"] = home
+	// Marked as bundled, so --yes never deletes the test binary itself.
+	f.vars["RBRIDGE_BUNDLED"] = "python:/somewhere/.venv"
+	if r := f.run("", "init"); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	r := f.run("", "uninstall")
+	if r.code != 0 || !strings.Contains(r.stdout, "Nothing was changed") || !strings.Contains(r.stdout, "pip uninstall rbridge") {
+		t.Fatalf("list: %+v", r)
+	}
+	if _, err := os.Stat(filepath.Join(home, "config", "config.yaml")); err != nil {
+		t.Fatal("listing removed something")
+	}
+	if r := f.run("", "uninstall", "--yes"); r.code != 0 || !strings.Contains(r.stdout, "were kept") {
+		t.Fatalf("yes: %+v", r)
+	}
+	if _, err := os.Stat(filepath.Join(home, "config")); err != nil {
+		t.Fatal("--yes without --purge removed the data")
+	}
+	if r := f.run("", "uninstall", "--purge", "--yes"); r.code != 0 {
+		t.Fatalf("purge: %+v", r)
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("home still there after --purge: %v", err)
+	}
+	if err := safeToRemove(f.home, f.home); err == nil {
+		t.Fatal("the home folder itself must never be removed")
+	}
+	if err := safeToRemove("/", f.home); err == nil {
+		t.Fatal("the root must never be removed")
+	}
+}

@@ -59,6 +59,7 @@ Usage:
   rbridge doctor [--json]                      Check configuration, directories and runtimes
   rbridge init [--config FILE] [--skills DIR]  Create rbridge's home and configuration; add skills
   rbridge config [--defaults]                  Print the effective configuration and its layers
+  rbridge uninstall [--purge] [--yes]          Show, then remove, the program and its data
 
   rbridge run [flags] "<prompt>"               Run one task and print the answer
   rbridge chat [flags] ["<first prompt>"]      Talk to a runtime in a session
@@ -122,6 +123,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		err = cmdConfig(ctx, args[1:], env)
 	case "init":
 		err = cmdInit(ctx, args[1:], env)
+	case "uninstall":
+		err = cmdUninstall(ctx, args[1:], env)
 	default:
 		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q; run rbridge help", args[0])
 	}
