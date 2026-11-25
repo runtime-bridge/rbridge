@@ -5,6 +5,7 @@ package claudeheadless
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -138,5 +139,27 @@ func TestToolKinds(t *testing.T) {
 	}
 	if got := approvalTitle("Bash", json.RawMessage(`{"command":"rm -rf x"}`)); got != "Bash: rm -rf x" {
 		t.Errorf("title %q", got)
+	}
+}
+
+func TestAuthFailures(t *testing.T) {
+	for _, m := range []string{"Not logged in · Please run /login", "Failed to authenticate: OAuth session expired and could not be refreshed", "Invalid API key · Fix external API key"} {
+		if !authFailure(m) {
+			t.Errorf("not recognised: %q", m)
+		}
+	}
+	if authFailure("Command failed: exit status 1") {
+		t.Error("ordinary failure taken for a sign-in problem")
+	}
+	ws, _ := filepath.EvalSymlinks(t.TempDir())
+	s, err := opener(context.Background(), t, "authexpired", domain.SessionOptions{Workspace: ws, KillGrace: time.Second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	_, err = s.Prompt(context.Background(), domain.Turn{Prompt: domain.Text("x")})
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.ErrAuthenticationRequired || de.Provider != "" {
+		t.Fatalf("got %#v", err)
 	}
 }

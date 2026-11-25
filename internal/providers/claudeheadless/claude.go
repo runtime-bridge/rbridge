@@ -253,14 +253,14 @@ func (s *Session) finish(r resultMsg, ts *turnState) (domain.TurnResult, error) 
 	}
 	if r.IsError {
 		code := domain.ErrExecutionFailed
-		if strings.Contains(r.Result, "Not logged in") || strings.Contains(r.Result, "/login") {
+		if authFailure(r.Result) {
 			code = domain.ErrAuthenticationRequired
 		}
 		msg := strings.TrimSpace(r.Result)
 		if msg == "" {
 			msg = "Claude Code reported an error (" + r.Subtype + ")"
 		}
-		return domain.TurnResult{}, &domain.Error{Code: code, Message: msg, Provider: "claude-code"}
+		return domain.TurnResult{}, &domain.Error{Code: code, Message: msg}
 	}
 	stop := domain.StopEndTurn
 	if r.StopReason == "max_tokens" {
@@ -381,7 +381,7 @@ func (s *Session) exitErr() error {
 	if s.cmd.ProcessState != nil {
 		msg = fmt.Sprintf("Claude Code exited with code %d", s.cmd.ProcessState.ExitCode())
 	}
-	return &domain.Error{Code: domain.ErrExecutionFailed, Message: msg, Provider: "claude-code", Details: s.details()}
+	return &domain.Error{Code: domain.ErrExecutionFailed, Message: msg, Details: s.details()}
 }
 
 func (s *Session) readLoop(r io.Reader) {
@@ -620,6 +620,18 @@ func (s *Session) answerControl(id string, req json.RawMessage) {
 	_ = s.write(map[string]any{"type": "control_response", "response": map[string]any{
 		"subtype": "success", "request_id": id, "response": resp,
 	}})
+}
+
+// authFailure recognises Claude Code's sign-in errors: not logged in, an
+// expired or revoked login, or a rejected API key.
+func authFailure(msg string) bool {
+	m := strings.ToLower(msg)
+	for _, s := range []string{"not logged in", "/login", "failed to authenticate", "oauth session expired", "oauth token", "invalid api key", "authentication_error", "invalid x-api-key"} {
+		if strings.Contains(m, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func approvalTitle(tool string, input json.RawMessage) string {

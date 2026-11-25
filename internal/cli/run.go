@@ -147,6 +147,16 @@ func (p *printer) Emit(e domain.Event) {
 	}
 }
 
+// endLine finishes a message that was being streamed.
+func (p *printer) endLine() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.midMsg {
+		fmt.Fprintln(p.env.Stdout)
+		p.midMsg = false
+	}
+}
+
 // line prints a status line on stderr, starting a new line if a message is in progress.
 func (p *printer) line(format string, args ...any) {
 	if p.midMsg {
@@ -275,6 +285,10 @@ func cmdRun(ctx context.Context, args []string, env Env) error {
 	pr := &printer{env: env, asJSON: tf.asJSON, quiet: tf.quiet}
 	res, err := svc.Run(ctx, t, service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Client: "cli"})
 	if err != nil {
+		pr.endLine()
+		if domain.CodeOf(err) == domain.ErrAuthenticationRequired && !tf.asJSON {
+			fmt.Fprintln(env.Stderr, "[hint] sign in to that runtime again, for example by starting it in a terminal and using its login command")
+		}
 		if tf.asJSON {
 			b, _ := json.Marshal(map[string]any{"type": "error", "error": err})
 			fmt.Fprintln(env.Stdout, string(b))

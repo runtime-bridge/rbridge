@@ -224,6 +224,10 @@ func (f *fake) runTurn(text string) {
 		}
 		f.result("spawned", nil)
 
+	case "authexpired":
+		f.init()
+		f.result("Failed to authenticate: OAuth session expired and could not be refreshed", map[string]any{"is_error": true})
+
 	case "env":
 		f.init()
 		f.result("CLAUDE_CONFIG_DIR="+os.Getenv("CLAUDE_CONFIG_DIR"), nil)

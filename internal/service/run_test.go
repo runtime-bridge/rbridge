@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -452,5 +453,16 @@ func TestTasksRunOnTheChosenClaudeAccount(t *testing.T) {
 		if rec, _ := svc.SessionRecord(context.Background(), res.SessionID); rec.ProviderID != provider {
 			t.Errorf("%s: session recorded as %s", provider, rec.ProviderID)
 		}
+	}
+}
+
+func TestErrorsNameTheAccount(t *testing.T) {
+	h := newRunHarness(t)
+	h.env[fakeclaude.EnvScenario] = "authexpired"
+	os.MkdirAll(filepath.Join(h.home, ".claude-alt"), 0o755)
+	_, err := h.svc().Run(context.Background(), domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "claude-code-alt"}, RunOptions{})
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.ErrAuthenticationRequired || de.Provider != "claude-code-alt" {
+		t.Fatalf("got %#v", err)
 	}
 }
