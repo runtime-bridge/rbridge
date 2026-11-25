@@ -63,12 +63,14 @@ Usage:
   rbridge chat [flags] ["<first prompt>"]      Talk to a runtime in a session
       --workspace DIR   --provider ID   --skill ID   --require CAP   --model NAME
       --profile observe|standard|controlled|custom   --approve ask|allow|deny
-      --timeout 10m   --schema FILE   --json   --quiet
+      --sandbox off|files|full   --mode ID   --timeout 10m   --schema FILE   --json   --quiet
 
   rbridge sessions [list|show|resume|cancel|prune]
                                                Manage sessions
-  rbridge skills list|add|show|trust|verify|remove|deliver
+  rbridge skills list|add|show|trust|verify|remove
                                                Manage the skill library
+  rbridge skills deliver|undeliver|deliveries  Place skills in a runtime's own folders
+  rbridge skills import|search|digest          skills-lock.json, catalogs, digests
   rbridge audit [--since 24h] [--json]         One line per session: profile, approvals, gaps
   rbridge daemon start|stop|status|run         Optional daemon serving IPC and local HTTP
   rbridge mcp [--profile observe]              MCP server on stdio for other agents
