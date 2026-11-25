@@ -264,7 +264,13 @@ func enforcementNotice(p policy.Profile, controls []policy.Control) domain.Notic
 			not = append(not, c.Name)
 		}
 	}
+	list := func(names []string) string {
+		if len(names) == 0 {
+			return "none"
+		}
+		return strings.Join(names, ", ")
+	}
 	msg := fmt.Sprintf("profile %s: enforced by rbridge: %s; relies on the runtime asking: %s; not enforced: %s",
-		p.Name, strings.Join(enforced, ", "), strings.Join(runtime, ", "), strings.Join(not, ", "))
+		p.Name, list(enforced), list(runtime), list(not))
 	return domain.NoticeData{Message: msg, Level: "info"}
 }
