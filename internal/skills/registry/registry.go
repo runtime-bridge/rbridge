@@ -51,12 +51,12 @@ type AddRequest struct {
 
 // AddResult is the outcome of Add.
 type AddResult struct {
-	Record   domain.SkillRecord
-	Warnings []string
+	Record   domain.SkillRecord `json:"record"`
+	Warnings []string           `json:"warnings,omitempty"`
 	// Unchanged is true when the same content was already installed.
-	Unchanged bool
+	Unchanged bool `json:"unchanged,omitempty"`
 	// Replaced is the digest of the version this one replaced.
-	Replaced string
+	Replaced string `json:"replaced,omitempty"`
 }
 
 // Add validates a skill and installs it into the library.
