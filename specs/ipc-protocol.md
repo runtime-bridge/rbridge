@@ -27,7 +27,8 @@ Parameters and results are the same JSON objects as the HTTP API (`specs/http-ap
 | `providers.get` | `id`, `refresh` | provider status |
 | `skills.list` | none | skill records |
 | `skills.get` | `id` | skill record |
-| `skills.add` | `path` (absolute) or `url` + `rev` (+ `subdir`), `link` | add result |
+| `skills.add` | `path` (absolute) or `url` + `rev` (+ `subdir`), `link`, or `catalog` (`catalog:id` or `id`) | add result |
+| `skills.search` | `query` | `{"skills":[...],"problems":[...]}` from the configured catalogs |
 | `skills.trust` | `id`, `trust` | skill record |
 | `skills.remove` | `id` | `{"removed":true}` |
 | `sessions.open` | `task`, `model`, `mode`, `input` | session record |

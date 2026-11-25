@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
 	"github.com/runtime-bridge/rbridge/internal/skills/lockfile"
 	"github.com/runtime-bridge/rbridge/internal/skills/registry"
+	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 )
 
 func TestPermanentDelivery(t *testing.T) {
@@ -241,5 +244,66 @@ func TestImportLock(t *testing.T) {
 	}
 	if _, ok, _ := svc.Skills().Get(ctx, "edited"); ok {
 		t.Fatal("an edited copy must not be imported")
+	}
+}
+
+func TestCatalogInstall(t *testing.T) {
+	ctx := context.Background()
+	// A repository with one skill, served to git under an https URL.
+	repo := t.TempDir()
+	dir := filepath.Join(repo, "skills", "audit")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: audit\ndescription: Audits code.\n---\nbody\n"), 0o644)
+	git := func(args ...string) string {
+		out, err := registry.RunGit(ctx, repo, append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(out)
+	}
+	git("init", "-q")
+	git("add", ".")
+	git("commit", "-q", "-m", "skills")
+	commit := git("rev-parse", "HEAD")
+	digest, err := spec.Digest(dir, spec.DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[url \"file://"+repo+"\"]\n\tinsteadOf = https://git.example.test/skills.git\n"), 0o644)
+
+	entry := func(id, d string) string {
+		return `{"id":"` + id + `","description":"Audits code","git":{"url":"https://git.example.test/skills.git","commit":"` + commit + `","subdir":"skills/audit"},"digest":"` + d + `"}`
+	}
+	wrong := "sha256:" + strings.Repeat("0", 64)
+	team := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"version":1,"skills":[` + entry("audit", digest) + `,` + entry("tampered", wrong) + `]}`))
+	}))
+	defer team.Close()
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"version":1,"skills":[` + entry("audit", digest) + `]}`))
+	}))
+	defer other.Close()
+
+	h := newRunHarness(t)
+	h.cfg.Skills.Catalogs = []config.CatalogConfig{{Name: "team", URL: team.URL}, {Name: "other", URL: other.URL}}
+	svc := h.svc()
+	found, problems, err := svc.SearchCatalogs(ctx, "audits")
+	if err != nil || len(found) != 3 || len(problems) != 0 {
+		t.Fatalf("search %+v %v %v", found, problems, err)
+	}
+	if _, err := svc.AddFromCatalog(ctx, "audit"); domain.CodeOf(err) != domain.ErrInvalidInput || !strings.Contains(err.Error(), "team:audit") {
+		t.Fatalf("ambiguous: %v", err)
+	}
+	res, err := svc.AddFromCatalog(ctx, "team:audit")
+	if err != nil || res.Record.Digest != digest || res.Record.Source.Revision != commit || res.Record.Trust != domain.TrustUnreviewed {
+		t.Fatalf("install %+v %v", res, err)
+	}
+	if _, err := svc.AddFromCatalog(ctx, "team:tampered"); domain.CodeOf(err) != domain.ErrSkillDigestMismatch {
+		t.Fatalf("digest mismatch: %v", err)
+	}
+	if _, err := svc.AddFromCatalog(ctx, "team:missing"); domain.CodeOf(err) != domain.ErrSkillNotFound {
+		t.Fatalf("missing: %v", err)
 	}
 }

@@ -359,6 +359,13 @@ func (b *Bridge) AddSkillFromGit(ctx context.Context, url, commit, subdir string
 	return res.Record, err
 }
 
+// AddSkillFromCatalog installs a skill listed in a configured catalog, as
+// "catalog:id" or "id". Its files must match the digest the catalog lists.
+func (b *Bridge) AddSkillFromCatalog(ctx context.Context, ref string) (SkillRecord, error) {
+	res, err := b.svc.AddFromCatalog(ctx, ref)
+	return res.Record, err
+}
+
 // Skills lists installed skills.
 func (b *Bridge) Skills(ctx context.Context) ([]SkillRecord, error) { return b.svc.Skills().List(ctx) }
 

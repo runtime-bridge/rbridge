@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -105,6 +107,14 @@ type SkillsConfig struct {
 	ProjectDir               string `yaml:"project_dir"`
 	AllowUnreviewed          bool   `yaml:"allow_unreviewed"`
 	GitRequirePinnedRevision bool   `yaml:"git_require_pinned_revision"`
+	// Catalogs are HTTP skill indexes. Only catalogs listed here are used.
+	Catalogs []CatalogConfig `yaml:"catalogs"`
+}
+
+// CatalogConfig names one skill catalog.
+type CatalogConfig struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
 }
 
 type PolicyConfig struct {
@@ -521,5 +531,36 @@ func (c Config) Validate() error {
 	if c.Skills.ProjectDir == "" || filepath.IsAbs(c.Skills.ProjectDir) {
 		return errors.New("skills.project_dir must be a relative path")
 	}
+	names := map[string]bool{}
+	for i, cat := range c.Skills.Catalogs {
+		if !ValidProviderID(cat.Name) {
+			return fmt.Errorf("skills.catalogs[%d]: name must be lowercase letters, digits and hyphens", i)
+		}
+		if names[cat.Name] {
+			return fmt.Errorf("skills.catalogs: duplicate name %q", cat.Name)
+		}
+		names[cat.Name] = true
+		if err := CheckCatalogURL(cat.URL); err != nil {
+			return fmt.Errorf("skills.catalogs.%s: %w", cat.Name, err)
+		}
+	}
 	return nil
+}
+
+// CheckCatalogURL accepts https URLs, and http only on the loopback address.
+func CheckCatalogURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return errors.New("url must be an absolute http(s) URL")
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if ip := net.ParseIP(host); host == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+	}
+	return errors.New("url must use https (plain http is allowed only on localhost)")
 }

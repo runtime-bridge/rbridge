@@ -72,6 +72,9 @@ func NewHTTPHandler(api *API, o HTTPOptions) http.Handler {
 	route("GET /v1/providers/{id}", "providers.get", 200, pathID("id"))
 	route("GET /v1/skills", "skills.list", 200, plain)
 	route("POST /v1/skills", "skills.add", 201, plain)
+	route("GET /v1/skills/search", "skills.search", 200, func(r *http.Request, _ json.RawMessage) (json.RawMessage, error) {
+		return json.Marshal(map[string]string{"query": r.URL.Query().Get("q")})
+	})
 	route("GET /v1/skills/{id}", "skills.get", 200, pathID("id"))
 	route("PUT /v1/skills/{id}/trust", "skills.trust", 200, pathID("id"))
 	route("DELETE /v1/skills/{id}", "skills.remove", 200, pathID("id"))

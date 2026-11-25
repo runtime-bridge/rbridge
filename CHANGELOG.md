@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Skill catalogs: `skills.catalogs` lists HTTP indexes of skills pinned to a Git commit and a digest (`specs/skill-catalog.md`). `rbridge skills search` and `rbridge skills add --catalog` use them, and an install is refused unless the files match the listed digest. `rbridge skills digest` computes the value for publishers.
+
 - `rbridge skills import` adds the skills listed in a project's `skills-lock.json`, verifying each against the lock's content hash before installing it.
 
 - Per-session skills for Gemini CLI, Codex and custom ACP agents with `skills_dir`: linked into the project's skill folder for the session, excluded from Git, removed afterwards and cleaned up after a crash. A project skill of the same name is never replaced.

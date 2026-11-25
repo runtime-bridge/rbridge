@@ -60,6 +60,7 @@ Claude Code keeps each account in its own directory, chosen with `CLAUDE_CONFIG_
 | `project_dir` | `.agents/skills` | Project skill folder |
 | `allow_unreviewed` | `false` | Deliver unreviewed skills (without their scripts) |
 | `git_require_pinned_revision` | `true` | Git sources must be a full commit hash |
+| `catalogs` | `[]` | Skill catalogs to search and install from: `name` and `url` (https, or http on localhost). Format: `specs/skill-catalog.md` |
 
 ## execution
 

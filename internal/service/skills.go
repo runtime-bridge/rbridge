@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/skills/catalog"
 	"github.com/runtime-bridge/rbridge/internal/skills/lockfile"
 	"github.com/runtime-bridge/rbridge/internal/skills/registry"
 	"github.com/runtime-bridge/rbridge/internal/skills/spec"
@@ -484,4 +485,85 @@ func (s *Service) ImportLock(ctx context.Context, project string, fetch bool) ([
 func dirExists(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
+}
+
+// SearchCatalogs lists the entries of every configured catalog that match
+// query (all entries when it is empty). A catalog that cannot be read is
+// reported in problems, not as an error.
+func (s *Service) SearchCatalogs(ctx context.Context, query string) ([]catalog.Entry, []string, error) {
+	if len(s.cfg.Skills.Catalogs) == 0 {
+		return nil, nil, domain.Errorf(domain.ErrInvalidInput, "no skill catalogs are configured (skills.catalogs)")
+	}
+	var out []catalog.Entry
+	var problems []string
+	for _, c := range s.cfg.Skills.Catalogs {
+		entries, dropped, err := s.catalogs.Fetch(ctx, c)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		for _, d := range dropped {
+			problems = append(problems, "catalog "+c.Name+": ignored "+d)
+		}
+		for _, e := range entries {
+			if catalog.Match(e, query) {
+				out = append(out, e)
+			}
+		}
+	}
+	return out, problems, nil
+}
+
+// AddFromCatalog installs a catalog skill named "catalog:id", or "id" when
+// only one catalog lists it. The commit is fetched and installed only if
+// its files have the digest the catalog lists.
+func (s *Service) AddFromCatalog(ctx context.Context, ref string) (registry.AddResult, error) {
+	name, id, scoped := strings.Cut(ref, ":")
+	if !scoped {
+		name, id = "", ref
+	}
+	var found []catalog.Entry
+	var problems []string
+	for _, c := range s.cfg.Skills.Catalogs {
+		if name != "" && c.Name != name {
+			continue
+		}
+		entries, _, err := s.catalogs.Fetch(ctx, c)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		for _, e := range entries {
+			if e.ID == id {
+				found = append(found, e)
+			}
+		}
+	}
+	switch {
+	case len(found) == 0 && len(problems) > 0:
+		return registry.AddResult{}, domain.Errorf(domain.ErrSkillNotFound, "%s not found; %s", ref, strings.Join(problems, "; "))
+	case len(found) == 0:
+		return registry.AddResult{}, domain.Errorf(domain.ErrSkillNotFound, "no configured catalog lists %s", ref)
+	case len(found) > 1:
+		var names []string
+		for _, e := range found {
+			names = append(names, e.Catalog+":"+e.ID)
+		}
+		return registry.AddResult{}, domain.Errorf(domain.ErrInvalidInput, "%s is in several catalogs; name one: %s", id, strings.Join(names, ", "))
+	}
+	e := found[0]
+	reg := s.Skills()
+	return reg.Add(ctx, registry.AddRequest{
+		URL: e.Git.URL, Rev: e.Git.Commit, Subdir: e.Git.Subdir,
+		Check: func(dir string) error {
+			got, err := spec.Digest(dir, reg.Limits)
+			if err != nil {
+				return err
+			}
+			if got != e.Digest {
+				return domain.Errorf(domain.ErrSkillDigestMismatch, "%s at %s does not have the digest catalog %s lists", e.ID, e.Git.Commit, e.Catalog)
+			}
+			return nil
+		},
+	})
 }

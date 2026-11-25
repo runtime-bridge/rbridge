@@ -20,6 +20,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/providers/detect"
 	"github.com/runtime-bridge/rbridge/internal/providers/registry"
 	"github.com/runtime-bridge/rbridge/internal/redact"
+	"github.com/runtime-bridge/rbridge/internal/skills/catalog"
 	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
 	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 	"github.com/runtime-bridge/rbridge/internal/store"
@@ -38,6 +39,7 @@ type Service struct {
 	now      func() time.Time
 	slots    chan struct{}
 	redact   *redact.Redactor
+	catalogs catalog.Client
 }
 
 // Redactor masks secrets in text rbridge stores or logs.

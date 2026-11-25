@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/runtime-bridge/rbridge/internal/skills/catalog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -106,6 +107,8 @@ type skillAddParams struct {
 	URL    string `json:"url"`
 	Rev    string `json:"rev"`
 	Subdir string `json:"subdir"`
+	// Catalog installs "catalog:id" or "id" from a configured catalog.
+	Catalog string `json:"catalog"`
 }
 
 type trustParams struct {
@@ -167,7 +170,29 @@ func (a *API) Methods() map[string]Method {
 			if in.Path != "" && !filepath.IsAbs(in.Path) {
 				return nil, domain.Errorf(domain.ErrInvalidInput, "path must be absolute")
 			}
+			if in.Catalog != "" {
+				return a.Svc.AddFromCatalog(ctx, in.Catalog)
+			}
 			return a.Svc.Skills().Add(ctx, skillreg.AddRequest{Path: in.Path, Link: in.Link, URL: in.URL, Rev: in.Rev, Subdir: in.Subdir})
+		},
+		"skills.search": func(ctx context.Context, _ string, p json.RawMessage) (any, error) {
+			var in struct {
+				Query string `json:"query"`
+			}
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			entries, problems, err := a.Svc.SearchCatalogs(ctx, in.Query)
+			if err != nil {
+				return nil, err
+			}
+			if entries == nil {
+				entries = []catalog.Entry{}
+			}
+			if problems == nil {
+				problems = []string{}
+			}
+			return map[string]any{"skills": entries, "problems": problems}, nil
 		},
 		"skills.trust": func(ctx context.Context, _ string, p json.RawMessage) (any, error) {
 			var in trustParams

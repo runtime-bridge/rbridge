@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/runtime-bridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/internal/skills/catalog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,8 +42,12 @@ func cmdSkills(ctx context.Context, args []string, env Env) error {
 		return skillsDeliveries(ctx, rest, env)
 	case "import":
 		return skillsImport(ctx, rest, env)
+	case "search":
+		return skillsSearch(ctx, rest, env)
+	case "digest":
+		return skillsDigest(rest, env)
 	}
-	return domain.Errorf(domain.ErrInvalidInput, "unknown skills command %q (list, add, show, trust, verify, remove, deliver, undeliver, deliveries, import)", sub)
+	return domain.Errorf(domain.ErrInvalidInput, "unknown skills command %q (list, add, show, trust, verify, remove, deliver, undeliver, deliveries, import, search, digest)", sub)
 }
 
 func skillsList(ctx context.Context, args []string, env Env) error {
@@ -117,13 +122,14 @@ func skillsAdd(ctx context.Context, args []string, env Env) error {
 	subdir := fs.String("subdir", "", "skill directory inside the Git repository")
 	link := fs.Bool("link", false, "use a local directory in place instead of copying it")
 	trust := fs.String("trust", "", "set a trust state right after adding (for skills you wrote yourself)")
+	fromCatalog := fs.Bool("catalog", false, "the argument is a catalog skill, as catalog:id or id")
 	asJSON := fs.Bool("json", false, "print JSON")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills add <dir | git-url --rev COMMIT [--subdir DIR]>")
+		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills add <dir | git-url --rev COMMIT [--subdir DIR] | --catalog [catalog:]id>")
 	}
 	src := pos[0]
 	req := skillreg.AddRequest{Link: *link, Rev: *rev, Subdir: *subdir}
@@ -140,7 +146,12 @@ func skillsAdd(ctx context.Context, args []string, env Env) error {
 		return err
 	}
 	reg := svc.Skills()
-	res, err := reg.Add(ctx, req)
+	var res skillreg.AddResult
+	if *fromCatalog {
+		res, err = svc.AddFromCatalog(ctx, pos[0])
+	} else {
+		res, err = reg.Add(ctx, req)
+	}
 	if err != nil {
 		return err
 	}
@@ -550,5 +561,75 @@ func skillsImport(ctx context.Context, args []string, env Env) error {
 	if refused > 0 {
 		return errSilent{code: domain.ErrSkillDigestMismatch.ExitCode()}
 	}
+	return nil
+}
+
+func skillsSearch(ctx context.Context, args []string, env Env) error {
+	fs := newFlags("skills search", env)
+	asJSON := fs.Bool("json", false, "print JSON")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	svc, err := newService(env)
+	if err != nil {
+		return err
+	}
+	entries, problems, err := svc.SearchCatalogs(ctx, strings.Join(pos, " "))
+	if err != nil {
+		return err
+	}
+	for _, p := range problems {
+		fmt.Fprintf(env.Stderr, "[warn] %s\n", p)
+	}
+	if *asJSON {
+		if entries == nil {
+			entries = []catalog.Entry{}
+		}
+		return writeJSON(env.Stdout, entries)
+	}
+	if len(entries) == 0 {
+		fmt.Fprintln(env.Stdout, "no matching skills")
+		return nil
+	}
+	tw := tabwriter.NewWriter(env.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "SKILL\tCATALOG\tLICENSE\tDESCRIPTION")
+	for _, e := range entries {
+		desc := e.Description
+		if len(desc) > 70 {
+			desc = desc[:67] + "..."
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.ID, e.Catalog, dash(e.License), desc)
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	fmt.Fprintln(env.Stdout, "\ninstall with: rbridge skills add --catalog <catalog>:<skill>")
+	return nil
+}
+
+// skillsDigest prints the digest rbridge computes for a skill folder, the
+// value a catalog lists for it.
+func skillsDigest(args []string, env Env) error {
+	fs := newFlags("skills digest", env)
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills digest <dir>")
+	}
+	dir := pos[0]
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(env.Dir, dir)
+	}
+	if _, err := spec.Parse(dir, spec.DefaultLimits); err != nil {
+		return &domain.Error{Code: domain.ErrSkillInvalid, Message: err.Error(), Cause: err}
+	}
+	d, err := spec.Digest(dir, spec.DefaultLimits)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(env.Stdout, d)
 	return nil
 }

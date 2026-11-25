@@ -196,6 +196,15 @@ paths:
       responses:
         "201": { description: Added; trust starts as unreviewed }
         "400": { $ref: "#/components/responses/Error" }
+  /v1/skills/search:
+    parameters:
+      - { name: q, in: query, schema: { type: string }, description: words that must all appear in the id or description }
+      - { $ref: "#/components/parameters/client" }
+    get:
+      summary: Search the configured skill catalogs
+      responses:
+        "200": { description: "Matching catalog entries and any catalog problems: {skills, problems}" }
+        "400": { $ref: "#/components/responses/Error" }
   /v1/skills/{id}:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
