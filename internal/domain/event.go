@@ -24,6 +24,9 @@ const (
 	EventTurnCompleted    EventType = "turn.completed"
 	EventTurnFailed       EventType = "turn.failed"
 	EventSessionClosed    EventType = "session.closed"
+	EventModeUpdated      EventType = "mode.updated"
+	EventInputRequired    EventType = "input.required"
+	EventInputResolved    EventType = "input.resolved"
 )
 
 // Event is one normalized event in a session.

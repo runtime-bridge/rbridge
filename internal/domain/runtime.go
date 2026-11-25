@@ -38,6 +38,84 @@ type SessionOptions struct {
 	FSGate func(ctx context.Context, kind, path string) error
 	// DisallowedTools are runtime tools to remove where the runtime supports it.
 	DisallowedTools []string
+	// ClientTerminal offers ACP agents rbridge-run terminals.
+	ClientTerminal bool
+	// CommandGate checks a command before rbridge runs it in a terminal.
+	CommandGate func(ctx context.Context, command string, args []string) error
+	// CommandTimeout and MaxOutputBytes bound terminals rbridge runs.
+	CommandTimeout time.Duration
+	MaxOutputBytes int64
+	// Elicitor answers questions the runtime asks the user. Nil means the
+	// runtime is told the client cannot answer questions.
+	Elicitor Elicitor
+}
+
+// Extensions are native features some runtimes offer beyond the common
+// interface. A ProviderSession implements it when it supports them.
+type Extensions interface {
+	Modes() (current string, modes []Mode)
+	SetMode(ctx context.Context, id string) error
+	ConfigOptions() []ConfigOption
+	SetConfigOption(ctx context.Context, id, value string) error
+}
+
+// Mode is a runtime session mode, such as "ask" or "code".
+type Mode struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// ConfigOption is a runtime session setting.
+type ConfigOption struct {
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Type        string             `json:"type"` // "select" or "boolean"
+	Current     string             `json:"current"`
+	Options     []ConfigOptionItem `json:"options,omitempty"`
+}
+
+// ConfigOptionItem is one choice of a select option.
+type ConfigOptionItem struct {
+	Value string `json:"value"`
+	Name  string `json:"name,omitempty"`
+}
+
+// InputRequest is a question a runtime asks the user, as a form or a URL.
+type InputRequest struct {
+	ID        string          `json:"id"`
+	SessionID string          `json:"session_id"`
+	Message   string          `json:"message"`
+	Mode      string          `json:"mode"` // "form" or "url"
+	Schema    json.RawMessage `json:"schema,omitempty"`
+	URL       string          `json:"url,omitempty"`
+}
+
+// InputResponse answers an InputRequest.
+type InputResponse struct {
+	Action  string         `json:"action"` // "accept", "decline" or "cancel"
+	Content map[string]any `json:"content,omitempty"`
+}
+
+// Elicitor answers InputRequests. It must return when ctx is done.
+type Elicitor interface {
+	Ask(ctx context.Context, req InputRequest) InputResponse
+}
+
+// ElicitorFunc adapts a function to Elicitor.
+type ElicitorFunc func(context.Context, InputRequest) InputResponse
+
+func (f ElicitorFunc) Ask(ctx context.Context, r InputRequest) InputResponse { return f(ctx, r) }
+
+type ModeUpdatedData struct {
+	Mode string `json:"mode"`
+}
+
+type InputResolvedData struct {
+	ID     string `json:"id"`
+	Action string `json:"action"`
+	By     string `json:"by"`
 }
 
 // Turn is one prompt sent to a session.
