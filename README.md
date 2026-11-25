@@ -59,8 +59,10 @@ opencode     available  1.19.6   acp              unknown  /home/me/.local/bin/o
 $ rbridge run --workspace ~/src/app "Summarise what this project does"
 $ rbridge run --provider opencode --model ollama/qwen3:8b --quiet "List the TODO comments"
 $ echo "Explain main.go" | rbridge run --json
-$ rbridge chat --provider claude-code
+$ rbridge chat --provider claude-code       # a normal conversation, streamed; /exit to leave
 ```
+
+A mistyped command or runtime gets a suggestion (`rbridge skill list` answers "did you mean skills?"), and `ls`, `rm` and `info` work as aliases.
 
 Without `--provider`, rbridge picks the first available runtime in `providers.order` that has every capability given with `--require`. A named runtime is never swapped for another unless `resolution.fallback: allowed`, and even then only for one with the same billing class (subscription, API key or local) unless `resolution.allow_billing_class_change` is set; every move is reported and audited. A runtime that needs permission for an action asks through rbridge: on a terminal you are asked, otherwise the request is denied unless you pass `--approve allow`.
 
@@ -140,6 +142,30 @@ res, err := b.Run(ctx, bridge.Task{
 
 `bridge.Open` starts a multi-turn session; `WithApprover` decides permission requests (the default denies them).
 
+### Node.js and Python
+
+The SDKs have the shape of the familiar model SDKs, with the runtime in place of the model, and start the daemon themselves:
+
+```python
+from rbridge import Rbridge                        # pip install rbridge
+
+rb = Rbridge(runtime="claude-code")
+print(rb.run("Summarise what this project does").text)
+
+bot = Rbridge(runtime="claude-code", chat=True, stream=True)
+bot.run("What does main.go do?")                   # printed as it is written
+bot.run("Now add tests for it")                    # same conversation
+```
+
+```js
+import { Rbridge } from "@rbridge/sdk";            // npm install @rbridge/sdk
+
+const rb = new Rbridge({ runtime: "claude-code" });
+console.log((await rb.run("Summarise what this project does")).text);
+```
+
+`run_many` / `runMany` runs prompts side by side, `schema` returns parsed JSON, `skills` takes the folders your program ships, `approve` decides permission requests and `max_cost_usd` caps spending. See the [Node.js](https://github.com/runtime-bridge/rbridge-sdk-ts) and [Python](https://github.com/runtime-bridge/rbridge-sdk-python) SDKs.
+
 ### Daemon
 
 Several applications can share one rbridge through an optional daemon:
@@ -163,7 +189,7 @@ The HTTP API listens on 127.0.0.1 only, needs the token from `daemon.token` in t
 
 ### Examples
 
-[`examples/`](examples) holds three small programs that use rbridge the way the project intends: a Go backend writing release notes, a Python security review and a Node.js operations check. Each ships its own skill and has a smoke test.
+[`examples/`](examples) holds three small programs that use rbridge the way the project intends: a Go backend writing release notes, a Python security review and a Node.js operations check, the last two each a single `rb.run(...)`. Each ships its own skill and has a smoke test.
 
 ## Supported runtimes
 

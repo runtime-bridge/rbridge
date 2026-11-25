@@ -30,6 +30,12 @@ rbridge run --profile observe "Explain what util.py does in one sentence"
 
 The answer streams to the terminal; status lines go to stderr. `observe` lets the runtime read but not change anything. Under the default `standard` profile, edits inside the workspace are allowed and commands are asked about.
 
+To keep talking, start a conversation instead; it remembers every turn until you type `/exit`:
+
+```sh
+rbridge chat --profile observe
+```
+
 ## 4. Add a skill
 
 A skill is a folder with a `SKILL.md`. Make a small one:
@@ -106,7 +112,15 @@ rb = Rbridge(profile="observe")
 print(rb.run("Explain util.py").text)
 ```
 
-Stop the daemon with `rbridge daemon stop`.
+Streaming and conversations are options, set once or per call:
+
+```python
+bot = Rbridge(profile="observe", chat=True, stream=True)
+bot.run("Explain util.py")           # printed as it is written
+bot.run("Now suggest a test")        # the same conversation
+```
+
+A daemon the SDK started stops after 30 idle minutes; `rbridge daemon stop` stops it now.
 
 ## 6. See what happened
 
