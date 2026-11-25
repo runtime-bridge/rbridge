@@ -130,7 +130,7 @@ The HTTP API listens on 127.0.0.1 only, needs the token from `daemon.token` in t
 
 | Runtime | How rbridge talks to it | Notes |
 |---|---|---|
-| Claude Code | `claude -p` with stream-json input and output | Uses your own Claude Code install and sign-in |
+| Claude Code | `claude -p` with stream-json input and output | Uses your own Claude Code install and sign-in. Each account (`CLAUDE_CONFIG_DIR`) is its own provider: `claude-code`, `claude-code-<name>` |
 | OpenCode | ACP (`opencode acp`) | Works with local models through Ollama |
 | Codex | ACP through `codex-acp` | ChatGPT login or `CODEX_API_KEY` |
 | Gemini CLI | ACP (`gemini --acp`) | API key by default; `providers.gemini-cli.allow_account_login` to opt in |

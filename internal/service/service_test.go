@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,9 @@ type harness struct {
 	runs  int
 	store *store.MemStore
 }
+
+// newRunHarness0 is newHarness under another name, for tests that read better that way.
+func newRunHarness0(t *testing.T) *harness { return newHarness(t) }
 
 func newHarness(t *testing.T) *harness {
 	home := t.TempDir()
@@ -60,7 +64,7 @@ func (h *harness) service(t *testing.T, cfg config.Config) *Service {
 			return process.Run(ctx, s)
 		},
 		Getenv:       getenv,
-		Environ:      func() []string { return []string{"PATH=/usr/bin:/bin"} },
+		Environ:      func() []string { return []string{"PATH=" + h.env["PATH"] + ":/usr/bin:/bin", "HOME=" + h.home} },
 		GOOS:         "linux",
 		Home:         h.home,
 		EnvAllowlist: []string{"PATH"},
@@ -160,17 +164,50 @@ func TestLookupImplementsProvider(t *testing.T) {
 	}
 }
 
-func TestSkillLocationsFollowClaudeConfigDir(t *testing.T) {
-	h := newHarness(t)
+func TestClaudeAccountsAreSeparateProviders(t *testing.T) {
+	h := newRunHarness0(t)
+	// A wrapper for one account and a bare directory for another.
+	os.MkdirAll(filepath.Join(h.home, ".claude-alt"), 0o755)
+	os.MkdirAll(filepath.Join(h.home, ".claude-work"), 0o755)
+	h.exe(t, "claude", `echo "2.1.331 (Claude Code)"`)
+	h.exe(t, "claude-work", "export CLAUDE_CONFIG_DIR=\"$HOME/.claude-work\"\nexec claude \"$@\"")
+	h.env["CLAUDE_CONFIG_DIR"] = filepath.Join(h.home, ".claude-alt")
 	svc := h.service(t, config.Defaults())
-	p, _ := svc.Provider(context.Background(), "claude-code", false)
-	if len(p.Skills.User) != 1 || p.Skills.User[0] != filepath.Join(h.home, ".claude", "skills") {
-		t.Fatalf("default: %v", p.Skills.User)
+	ctx := context.Background()
+
+	def, _ := svc.Provider(ctx, "claude-code", false)
+	if len(def.Skills.User) != 1 || def.Skills.User[0] != filepath.Join(h.home, ".claude", "skills") {
+		t.Fatalf("claude-code must stay on ~/.claude whatever the shell sets: %v", def.Skills.User)
 	}
-	h.env["CLAUDE_CONFIG_DIR"] = "/alt/claude"
-	p, _ = svc.Provider(context.Background(), "claude-code", true)
-	if len(p.Skills.User) != 1 || p.Skills.User[0] != "/alt/claude/skills" {
-		t.Fatalf("with CLAUDE_CONFIG_DIR: %v", p.Skills.User)
+	alt, err := svc.Provider(ctx, "claude-code-alt", false)
+	if err != nil || alt.Skills.User[0] != filepath.Join(h.home, ".claude-alt", "skills") || alt.Runtime.Health != domain.HealthAvailable {
+		t.Fatalf("directory account: %+v %v", alt, err)
+	}
+	work, err := svc.Provider(ctx, "claude-code-work", false)
+	if err != nil || work.Runtime.Executable != filepath.Join(h.bin, "claude-work") || work.Runtime.Version != "2.1.331" {
+		t.Fatalf("wrapper account: %+v %v", work.Runtime, err)
+	}
+	r := svc.Doctor(ctx)
+	found := false
+	for _, c := range r.Checks {
+		if c.Name == "claude accounts" && strings.Contains(c.Detail, "claude-code-alt") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("doctor should say which provider the shell's account is: %+v", r.Checks)
+	}
+
+	off := false
+	cfg := config.Defaults()
+	cfg.Providers.Settings["claude-code"] = config.ProviderEntry{DiscoverAccounts: &off, Accounts: []config.AccountConfig{{Name: "team", ConfigDir: "~/.team-claude"}}}
+	svc = h.service(t, cfg)
+	if _, err := svc.Provider(ctx, "claude-code-alt", false); domain.CodeOf(err) != domain.ErrProviderNotFound {
+		t.Fatal("discovery should be off")
+	}
+	team, err := svc.Provider(ctx, "claude-code-team", false)
+	if err != nil || team.Skills.User[0] != filepath.Join(h.home, ".team-claude", "skills") {
+		t.Fatalf("configured account: %+v %v", team, err)
 	}
 }
 

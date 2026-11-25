@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Several Claude Code accounts on one machine: each becomes provider `claude-code-<name>`, found from `claude-<name>` wrapper scripts and `~/.claude-<name>` directories or declared in config, and started through its wrapper when it has one. `claude-code` is always `~/.claude` and no longer follows the caller's `CLAUDE_CONFIG_DIR`.
+
 - More providers over ACP: Codex (codex-acp), Gemini CLI and the Claude ACP adapter. Providers whose terms rule out using an account login from another tool need an API key; detection reports `needs-api-key` until one is set.
 - Any ACP agent can be added through `providers.custom` alone; it passes the same contract suite as the built-in adapters.
 - `rbridge mcp`: rbridge as an MCP server for other agents.

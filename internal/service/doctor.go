@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/rbridge/rbridge/internal/domain"
@@ -126,6 +127,25 @@ func (s *Service) Doctor(ctx context.Context) Report {
 			}
 			c.Detail = "found but not runnable: " + strings.Join(errs, "; ")
 			c.Fix = "Reinstall it, or pin a working copy with providers." + st.ID + ".executable."
+		}
+		add(c)
+	}
+	if dir := s.getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		c := Check{Name: "claude accounts", Status: CheckWarn}
+		match := ""
+		for _, st := range statuses {
+			for _, u := range st.Skills.User {
+				if filepath.Clean(filepath.Dir(u)) == filepath.Clean(dir) && st.ID != "claude-code" {
+					match = st.ID
+				}
+			}
+		}
+		if match != "" {
+			c.Detail = fmt.Sprintf("your shell sets CLAUDE_CONFIG_DIR=%s, which is provider %s; rbridge's claude-code always uses ~/.claude", dir, match)
+			c.Fix = "Use --provider " + match + ", or put it first in providers.order."
+		} else {
+			c.Detail = fmt.Sprintf("your shell sets CLAUDE_CONFIG_DIR=%s, which no provider uses; rbridge's claude-code always uses ~/.claude", dir)
+			c.Fix = "Declare it under providers.claude-code.accounts to use it."
 		}
 		add(c)
 	}

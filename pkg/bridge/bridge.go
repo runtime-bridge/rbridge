@@ -159,7 +159,10 @@ func New(_ context.Context, o Options) (*Bridge, error) {
 		}
 		vars["RBRIDGE_HOME"] = h
 	}
-	home, _ := os.UserHomeDir()
+	home := vars["HOME"]
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
 	getenv := func(k string) string { return vars[k] }
 	svc, err := service.FromEnvironment(service.Environment{
 		Env:        config.Env{GOOS: runtime.GOOS, Getenv: getenv, HomeDir: home, UID: os.Getuid()},

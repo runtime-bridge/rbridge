@@ -429,3 +429,28 @@ func TestFailedOpenIsRecorded(t *testing.T) {
 		t.Fatalf("%+v", list)
 	}
 }
+
+func TestTasksRunOnTheChosenClaudeAccount(t *testing.T) {
+	h := newRunHarness(t)
+	h.env[fakeclaude.EnvScenario] = "env"
+	// The caller's shell points at one account; claude-code must not inherit it.
+	h.env["CLAUDE_CONFIG_DIR"] = filepath.Join(h.home, ".claude-alt")
+	os.MkdirAll(filepath.Join(h.home, ".claude-alt"), 0o755)
+	wrapper := filepath.Join(h.bin, "claude-work")
+	os.WriteFile(wrapper, []byte("#!/bin/sh\nexport CLAUDE_CONFIG_DIR=\"$HOME/.claude-work\"\nexec claude \"$@\"\n"), 0o755)
+	svc := h.svc()
+	cases := map[string]string{
+		"claude-code":      "CLAUDE_CONFIG_DIR=",
+		"claude-code-alt":  "CLAUDE_CONFIG_DIR=" + filepath.Join(h.home, ".claude-alt"),
+		"claude-code-work": "CLAUDE_CONFIG_DIR=" + filepath.Join(h.home, ".claude-work"),
+	}
+	for provider, want := range cases {
+		res, err := svc.Run(context.Background(), domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: provider}, RunOptions{})
+		if err != nil || res.Output != want {
+			t.Errorf("%s: got %q %v, want %q", provider, res.Output, err, want)
+		}
+		if rec, _ := svc.SessionRecord(context.Background(), res.SessionID); rec.ProviderID != provider {
+			t.Errorf("%s: session recorded as %s", provider, rec.ProviderID)
+		}
+	}
+}

@@ -52,7 +52,23 @@ type ProviderEntry struct {
 	// AllowAccountLogin lets rbridge use a runtime whose terms make API keys
 	// the safe default, with the user's own account login instead.
 	AllowAccountLogin bool `yaml:"allow_account_login"`
+	// Accounts and DiscoverAccounts apply to claude-code only: each extra
+	// Claude Code account becomes provider claude-code-<name>.
+	Accounts         []AccountConfig `yaml:"accounts"`
+	DiscoverAccounts *bool           `yaml:"discover_accounts"`
 }
+
+// AccountConfig declares one Claude Code account.
+type AccountConfig struct {
+	Name string `yaml:"name"`
+	// ConfigDir is the account's CLAUDE_CONFIG_DIR; ~ and $HOME are expanded.
+	ConfigDir string `yaml:"config_dir"`
+	// Launcher is an optional wrapper script that starts this account.
+	Launcher string `yaml:"launcher"`
+}
+
+// Discovering reports whether accounts are discovered automatically (default on).
+func (e ProviderEntry) Discovering() bool { return e.DiscoverAccounts == nil || *e.DiscoverAccounts }
 
 // IsEnabled reports whether the provider is enabled; providers are enabled by default.
 func (e ProviderEntry) IsEnabled() bool { return e.Enabled == nil || *e.Enabled }
@@ -412,6 +428,20 @@ func (c Config) Validate() error {
 		}
 		if e.Executable != "" && !filepath.IsAbs(e.Executable) {
 			return fmt.Errorf("providers.%s.executable must be an absolute path", id)
+		}
+		if (len(e.Accounts) > 0 || e.DiscoverAccounts != nil) && id != "claude-code" {
+			return fmt.Errorf("providers.%s: accounts apply to claude-code only", id)
+		}
+		for i, a := range e.Accounts {
+			if !ValidProviderID(a.Name) || len(a.Name) > 40 {
+				return fmt.Errorf("providers.%s.accounts[%d]: invalid name %q", id, i, a.Name)
+			}
+			if a.ConfigDir == "" {
+				return fmt.Errorf("providers.%s.accounts.%s: config_dir is required", id, a.Name)
+			}
+			if a.Launcher != "" && !filepath.IsAbs(a.Launcher) {
+				return fmt.Errorf("providers.%s.accounts.%s: launcher must be an absolute path", id, a.Name)
+			}
 		}
 	}
 	seen := map[string]bool{}

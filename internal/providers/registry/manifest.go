@@ -4,10 +4,12 @@ package registry
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 
 	"github.com/rbridge/rbridge/internal/config"
 	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/rbridge/rbridge/internal/providers/accounts"
 )
 
 // Manifest describes how to find, launch and use one runtime.
@@ -46,6 +48,8 @@ type DetectSpec struct {
 // LaunchSpec is how the runtime is started for a session.
 type LaunchSpec struct {
 	Args []string
+	// SetEnv is added to the runtime's environment, after filtering.
+	SetEnv map[string]string
 	// EnvPassthrough names variables passed to the runtime in addition to
 	// the policy allowlist.
 	EnvPassthrough []string
@@ -109,12 +113,14 @@ func ClaudeCode() Manifest {
 			VersionArgs: []string{"--version"},
 		},
 		Launch: LaunchSpec{
-			Args:           []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"},
-			EnvPassthrough: []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"},
+			Args: []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"},
+			// CLAUDE_CONFIG_DIR is deliberately not passed through: it selects the
+			// account, and each account is its own provider (see ClaudeAccount).
+			EnvPassthrough: []string{"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"},
 		},
 		Skills: SkillDirs{
 			Project:    []string{".claude/skills"},
-			User:       []string{"$CLAUDE_CONFIG_DIR/skills|~/.claude/skills"},
+			User:       []string{"~/.claude/skills"},
 			SessionDir: ".claude/skills",
 			Strategy:   "session-dir",
 		},
@@ -141,8 +147,29 @@ func ClaudeCode() Manifest {
 			"File and shell access use Claude Code's own tools; rbridge policy applies through its permission flags.",
 			"Does not read .agents/skills; skills are delivered to .claude/skills locations.",
 		},
-		Notes: []string{"Sign-in is checked by Claude Code itself; rbridge only sees the result of a run."},
+		Notes: []string{"Default account (~/.claude). Other accounts appear as claude-code-<name>.", "Sign-in is checked by Claude Code itself; rbridge only sees the result of a run."},
 	}
+}
+
+// ClaudeAccount is Claude Code for one extra account. With a launcher the
+// account's own wrapper script is run, so whatever it sets up applies;
+// otherwise rbridge runs claude with CLAUDE_CONFIG_DIR set to the account.
+func ClaudeAccount(a accounts.Account) Manifest {
+	m := ClaudeCode()
+	m.ID = "claude-code-" + a.Name
+	m.DisplayName = "Claude Code (" + a.Name + ")"
+	m.Skills.User = []string{filepath.Join(a.ConfigDir, "skills")}
+	m.Notes = []string{"Account " + a.Name + ": " + a.ConfigDir + " (found by " + a.Source + ")."}
+	if a.Launcher != "" {
+		m.Detect = DetectSpec{Executables: []string{a.Launcher}, VersionArgs: []string{"--version"}}
+		// The wrapper chooses its own credentials or endpoint, so the caller's
+		// API key variables say nothing about this account.
+		m.AuthEnv = nil
+		m.Notes = append(m.Notes, "Started through "+a.Launcher+", which may set its own endpoint or credentials.")
+	} else {
+		m.Launch.SetEnv = map[string]string{"CLAUDE_CONFIG_DIR": a.ConfigDir}
+	}
+	return m
 }
 
 // OpenCode is the built-in manifest for OpenCode over ACP.
@@ -338,10 +365,13 @@ type Registry struct {
 	byID      map[string]int
 }
 
-// New builds the registry from the built-ins and the configuration.
-// Providers listed in providers.order come first, in that order.
-func New(cfg config.Config) (*Registry, error) {
+// New builds the registry from the built-ins, extra Claude Code accounts and
+// the configuration. Providers listed in providers.order come first, in that order.
+func New(cfg config.Config, accts ...accounts.Account) (*Registry, error) {
 	all := BuiltIns()
+	for _, a := range accts {
+		all = append(all, ClaudeAccount(a))
+	}
 	for _, c := range cfg.Providers.Custom {
 		all = append(all, FromCustom(c))
 	}

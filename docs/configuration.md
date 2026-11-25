@@ -24,6 +24,22 @@ rbridge reads YAML from these layers, later ones winning; maps merge and lists a
 
 Built-in providers: `claude-code`, `opencode`, `codex` (codex-acp), `gemini-cli`, `claude-acp` (API key only).
 
+### Several Claude Code accounts
+
+Claude Code keeps each account in its own directory, chosen with `CLAUDE_CONFIG_DIR`. rbridge makes every account its own provider, so a task always runs on the account you chose and its session records which one:
+
+- `claude-code` is always the default account, `~/.claude`. rbridge does not pass your shell's `CLAUDE_CONFIG_DIR` through, so the account never changes with the terminal you start rbridge from.
+- `claude-code-<name>` is found automatically from wrapper scripts named `claude-<name>` on `PATH` (or in `~/.local/bin`) that set `CLAUDE_CONFIG_DIR`, and from `~/.claude-<name>` directories. An account with a wrapper is started through it, so whatever the wrapper sets up applies; otherwise rbridge runs `claude` with `CLAUDE_CONFIG_DIR` set.
+- Discovery reads only the wrapper scripts, looking for the `CLAUDE_CONFIG_DIR=` line. It never opens files inside an account directory or files a wrapper sources.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `claude-code.discover_accounts` | `true` | Turn automatic discovery off |
+| `claude-code.accounts` | `[]` | Declare accounts: `name`, `config_dir` (`~` allowed), optional `launcher` (absolute path to a wrapper) |
+| `claude-code-<name>.enabled` | `true` | Hide one account |
+
+`rbridge doctor` warns when your shell's `CLAUDE_CONFIG_DIR` points at an account other than the default, and names the provider to use.
+
 ## policy
 
 | Key | Default | Meaning |

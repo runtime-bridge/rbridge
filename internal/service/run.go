@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -312,7 +313,12 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	seq.Emit(domain.NewEvent(domain.EventNotice, enforcementNotice(prof, controls)))
 
 	allow := append(slices.Clone(s.cfg.Policy.EnvAllowlist), m.Launch.EnvPassthrough...)
-	env := process.FilterEnv(s.environ(), allow, plan.Env)
+	extra := maps.Clone(plan.Env)
+	if extra == nil {
+		extra = map[string]string{}
+	}
+	maps.Copy(extra, m.Launch.SetEnv)
+	env := process.FilterEnv(s.environ(), allow, extra)
 	opts := domain.SessionOptions{
 		BridgeID: rec.ID, Workspace: t.Workspace, Executable: st.Runtime.Executable, Env: env,
 		ResumeNativeID: resume, SkillDirs: plan.SkillDirs, MCPServers: t.MCPServers, Model: ro.Model,

@@ -16,6 +16,7 @@ import (
 	"github.com/rbridge/rbridge/internal/config"
 	"github.com/rbridge/rbridge/internal/domain"
 	"github.com/rbridge/rbridge/internal/process"
+	"github.com/rbridge/rbridge/internal/providers/accounts"
 	"github.com/rbridge/rbridge/internal/providers/detect"
 	"github.com/rbridge/rbridge/internal/providers/registry"
 	skillreg "github.com/rbridge/rbridge/internal/skills/registry"
@@ -47,16 +48,57 @@ type Options struct {
 	Getenv   func(string) string
 	Environ  func() []string
 	Now      func() time.Time
+	// AccountsFS is used to discover Claude Code accounts (default the real filesystem).
+	AccountsFS accounts.FS
+}
+
+// claudeAccounts lists extra Claude Code accounts: configured ones, plus
+// discovered ones unless discovery is off. Configured names win.
+func claudeAccounts(cfg config.Config, d *detect.Detector, fsys accounts.FS) ([]accounts.Account, error) {
+	entry := cfg.Providers.Settings["claude-code"]
+	var out []accounts.Account
+	names := map[string]bool{}
+	dirs := map[string]bool{}
+	for _, a := range entry.Accounts {
+		dir, ok := accounts.Expand(a.ConfigDir, d.Home)
+		if !ok {
+			return nil, fmt.Errorf("providers.claude-code.accounts.%s: config_dir must be absolute or start with ~", a.Name)
+		}
+		out = append(out, accounts.Account{Name: a.Name, ConfigDir: dir, Launcher: a.Launcher, Source: "config"})
+		names[a.Name], dirs[dir] = true, true
+	}
+	if entry.Discovering() && d.Home != "" {
+		var bins []string
+		for _, b := range filepath.SplitList(d.Getenv("PATH")) {
+			if filepath.IsAbs(b) {
+				bins = append(bins, b)
+			}
+		}
+		bins = append(bins, filepath.Join(d.Home, ".local", "bin"))
+		for _, a := range accounts.Discover(accounts.Options{FS: fsys, Home: d.Home, BinDirs: bins, Wrappers: true, Dirs: true}) {
+			if !names[a.Name] && !dirs[a.ConfigDir] {
+				out = append(out, a)
+			}
+		}
+	}
+	return out, nil
 }
 
 // New builds a Service from explicit options.
 func New(o Options) (*Service, error) {
-	reg, err := registry.New(o.Config)
+	if o.Getenv == nil {
+		o.Getenv = os.Getenv
+	}
+	if o.Detector == nil {
+		return nil, fmt.Errorf("service: detector is required")
+	}
+	accts, err := claudeAccounts(o.Config, o.Detector, o.AccountsFS)
 	if err != nil {
 		return nil, err
 	}
-	if o.Getenv == nil {
-		o.Getenv = os.Getenv
+	reg, err := registry.New(o.Config, accts...)
+	if err != nil {
+		return nil, err
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -70,9 +112,6 @@ func New(o Options) (*Service, error) {
 			return nil, err
 		}
 		o.Store = st
-	}
-	if o.Detector == nil {
-		return nil, fmt.Errorf("service: detector is required")
 	}
 	return &Service{
 		paths: o.Paths, cfg: o.Config, layers: o.Layers, registry: reg,

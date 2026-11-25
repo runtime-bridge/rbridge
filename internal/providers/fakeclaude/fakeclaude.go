@@ -224,6 +224,10 @@ func (f *fake) runTurn(text string) {
 		}
 		f.result("spawned", nil)
 
+	case "env":
+		f.init()
+		f.result("CLAUDE_CONFIG_DIR="+os.Getenv("CLAUDE_CONFIG_DIR"), nil)
+
 	case "schema":
 		f.init()
 		f.result(`{"ok":true}`, nil)
