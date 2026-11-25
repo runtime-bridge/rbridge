@@ -20,3 +20,6 @@ coverage.*
 Thumbs.db
 .idea/
 .vscode/
+node_modules/
+package-lock.json
+__pycache__/
