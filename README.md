@@ -35,6 +35,10 @@ curl -fsSL https://raw.githubusercontent.com/runtime-bridge/rbridge/main/scripts
 
 The script verifies the release checksum (and the cosign signature when cosign is installed) before installing to `~/.local/bin`. With Go 1.25 or later: `go install github.com/runtime-bridge/rbridge/cmd/rbridge@latest`.
 
+That is the global install: one rbridge on your `PATH` for the whole machine, with its data in your user folders. The other way is per project: the Python and Node.js SDK packages carry rbridge for Linux, macOS and Windows, so `pip install rbridge` in a virtual environment or `npm install @runtime-bridge/sdk` in a project brings a copy that lives only there, keeps its data in the project's `.rbridge` folder, and goes away with `pip uninstall` or `npm uninstall`. Inside such a project its copy is used, never the global one.
+
+`rbridge uninstall` lists the program and every data folder with their sizes and changes nothing; `--yes` removes the program, and `--purge --yes` the configuration, skills, sessions and audit log as well. For a copy that came with an SDK it points you at pip or npm instead.
+
 The full documentation, with examples for the CLI and every SDK, is at **[runtime-bridge.github.io](https://runtime-bridge.github.io/docs/)**. New here? Follow [docs/getting-started.md](docs/getting-started.md). Reference: [configuration](docs/configuration.md), [threat model](docs/threat-model.md), [performance](docs/performance.md), [releasing](docs/releasing.md).
 
 Or from a checkout:

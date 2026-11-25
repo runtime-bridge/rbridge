@@ -2,6 +2,10 @@
 
 ## v1.0.0 (unreleased)
 
+- `rbridge uninstall` lists the program and its data folders and removes them with `--yes` (and `--purge` for the data); for a copy that came with an SDK it names the package manager instead.
+
+- Per-project installs: the Python wheels and npm packages for Linux, macOS and Windows carry rbridge, keep its data in the project's `.rbridge` folder, and can start their own daemon (`connect(start=True)`, `connect({ start: true })`). The Node.js package is now `@runtime-bridge/sdk`.
+
 - `rbridge init` creates rbridge's folders and a configuration file: a commented starter, or with `--config FILE` your own, checked before it is written. A different existing file is replaced only with `--force`, which keeps a backup. `--skills DIR` (with `--only`, `--exclude` and `--trust`) adds a folder of skills in the same step. Running it again is safe.
 
 - Adding many skills at once: `rbridge skills add` finds every skill below the folders it is given (or in a Git repository, with `--subdir` repeatable), with `--only` and `--exclude` taking names or patterns such as `metric-*`, `--dry-run` to preview, and `--trust` applied to every skill added. One invalid skill does not stop the rest. `rbridge skills trust` and `rbridge skills remove` take several ids or patterns. The daemon gains `skills.add_many` (`POST /v1/skills/batch`), the Go library `AddSkills` and `AddSkillsFromGit`, and the SDKs `addSkills` and `add_skills`.
@@ -40,7 +44,7 @@
 - Any ACP agent can be added through `providers.custom` alone; it passes the same contract suite as the built-in adapters.
 - `rbridge mcp`: rbridge as an MCP server for other agents.
 - `rbridge config` prints the effective configuration and its layers; `providers.<id>.model` sets a default model and `providers.<id>.args` replaces launch arguments.
-- SDKs: `@rbridge/sdk` for Node.js and `rbridge` for Python, both without dependencies.
+- SDKs: `@runtime-bridge/sdk` for Node.js and `rbridge` for Python, both without dependencies.
 - Install script that verifies checksums and, when cosign is present, signatures.
 - Docs: getting started, configuration reference, threat model, performance, releasing.
 - The daemon moves its socket to a short temp path when the runtime directory is too deep for a Unix socket; clients find it through `daemon.json`.
