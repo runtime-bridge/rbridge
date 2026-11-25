@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Per-session skills for Gemini CLI, Codex and custom ACP agents with `skills_dir`: linked into the project's skill folder for the session, excluded from Git, removed afterwards and cleaned up after a crash. A project skill of the same name is never replaced.
+
 - `rbridge skills deliver --permanent [--project DIR]` places a skill in a runtime's own skill folder and tracks it; `skills undeliver` and `skills deliveries` manage them. Trust changes update them, blocking or removing a skill removes them, and project deliveries are added to `.git/info/exclude`.
 
 - ACP terminals served by rbridge: commands go through the policy profile, run in the workspace with the filtered environment, and are bounded by `execution.command_timeout` and `execution.max_output_bytes`; all are killed when the session ends. The enforcement notice lists them as enforced.

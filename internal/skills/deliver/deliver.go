@@ -24,6 +24,11 @@ const (
 	// path and points OPENCODE_CONFIG at it. OpenCode merges it with the
 	// user's own configuration (spike, 2026-11-24).
 	OpenCodeConfig Strategy = "opencode-config"
+	// ProjectLink links each skill into the project's own skill folder
+	// (<workspace>/<layout>/<name>) for the session, for runtimes that have
+	// no session-scoped skill path (Gemini CLI, Codex). The caller removes
+	// the links when the session ends; existing entries are never replaced.
+	ProjectLink Strategy = "project-link"
 )
 
 // Item is one skill to deliver.
@@ -43,7 +48,9 @@ type Request struct {
 	// Layout is the path under the session directory for SessionDir.
 	Layout  string
 	Scratch string // private per-session directory
-	Items   []Item
+	// Workspace is the project, for ProjectLink.
+	Workspace string
+	Items     []Item
 	// Getenv reads the caller's environment, to avoid overriding a user's
 	// own OPENCODE_CONFIG.
 	Getenv func(string) string
@@ -57,6 +64,9 @@ type Plan struct {
 	Scripts    map[string]bool
 	// Paths maps each skill id to the directory the runtime will see.
 	Paths map[string]string
+	// ProjectLinks are entries created inside the workspace, to remove when
+	// the session ends.
+	ProjectLinks []string
 }
 
 // Prepare lays out the skills for one session. Everything is created under
@@ -102,6 +112,26 @@ func Prepare(req Request) (Plan, error) {
 		default:
 			return plan, domain.Errorf(domain.ErrSkillUnavailable, "OPENCODE_CONFIG and OPENCODE_CONFIG_DIR are both set; rbridge will not override them to deliver skills")
 		}
+	case ProjectLink:
+		if !filepath.IsAbs(req.Workspace) || req.Layout == "" {
+			return plan, fmt.Errorf("deliver: project-link needs a workspace and a layout")
+		}
+		target = filepath.Join(req.Scratch, "project-skills")
+		projectDir := filepath.Join(req.Workspace, filepath.FromSlash(req.Layout))
+		for _, it := range req.Items {
+			if _, err := os.Lstat(filepath.Join(projectDir, it.Record.ID)); err == nil {
+				return plan, domain.Errorf(domain.ErrSkillUnavailable, "the project already has a skill folder %s; rbridge will not replace it", filepath.Join(projectDir, it.Record.ID))
+			}
+		}
+		defer func() {
+			if len(plan.Deliveries) < len(req.Items) {
+				// Prepare failed part way; take back what was placed.
+				for _, l := range plan.ProjectLinks {
+					os.RemoveAll(l)
+				}
+				plan.ProjectLinks = nil
+			}
+		}()
 	default:
 		return plan, domain.Errorf(domain.ErrSkillUnavailable, "this runtime has no per-session skill delivery")
 	}
@@ -127,6 +157,20 @@ func Prepare(req Request) (Plan, error) {
 				return plan, err
 			}
 			mode += "+no-scripts"
+		}
+		if req.Strategy == ProjectLink {
+			link := filepath.Join(req.Workspace, filepath.FromSlash(req.Layout), it.Record.ID)
+			if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+				return plan, err
+			}
+			if err := os.Symlink(dest, link); err != nil {
+				if err := registry.CopySkill(dest, link, nil); err != nil {
+					return plan, err
+				}
+				mode += "+in-project-copy"
+			}
+			plan.ProjectLinks = append(plan.ProjectLinks, link)
+			dest = link
 		}
 		plan.Scripts[it.Record.ID] = it.Scripts || len(it.ScriptFiles) == 0
 		plan.Paths[it.Record.ID] = dest

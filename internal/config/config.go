@@ -80,6 +80,10 @@ type CustomProvider struct {
 	Integration string       `yaml:"integration"`
 	Launch      LaunchConfig `yaml:"launch"`
 	VersionArgs []string     `yaml:"version_args"`
+	// SkillsDir is the project folder the agent reads skills from, such as
+	// .agents/skills. When set, rbridge delivers a task's skills by linking
+	// them there for the session.
+	SkillsDir string `yaml:"skills_dir"`
 }
 
 // LaunchConfig is how to start a runtime.
@@ -464,6 +468,9 @@ func (c Config) Validate() error {
 		}
 		if p.Launch.Command == "" {
 			return fmt.Errorf("providers.custom.%s: launch.command is required", p.ID)
+		}
+		if d := p.SkillsDir; d != "" && (filepath.IsAbs(d) || strings.HasPrefix(d, "/") || slices.Contains(strings.Split(filepath.ToSlash(d), "/"), "..")) {
+			return fmt.Errorf("providers.custom.%s: skills_dir must be a path inside the project, such as .agents/skills", p.ID)
 		}
 	}
 	if !slices.Contains(profiles, c.Policy.DefaultProfile) {

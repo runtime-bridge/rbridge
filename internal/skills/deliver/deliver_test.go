@@ -123,3 +123,32 @@ func TestFindClashes(t *testing.T) {
 		t.Fatalf("clashes %+v", got)
 	}
 }
+
+func TestProjectLink(t *testing.T) {
+	ws := t.TempDir()
+	scratch := t.TempDir()
+	withheld := skill(t, "b")
+	withheld.Scripts = false
+	plan, err := Prepare(Request{Strategy: ProjectLink, Layout: ".agents/skills", Scratch: scratch, Workspace: ws, Items: []Item{skill(t, "a"), withheld}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.ProjectLinks) != 2 || plan.Paths["a"] != filepath.Join(ws, ".agents", "skills", "a") {
+		t.Fatalf("%+v", plan)
+	}
+	if _, err := os.Stat(filepath.Join(ws, ".agents", "skills", "b", "scripts")); !os.IsNotExist(err) {
+		t.Fatal("withheld scripts visible through the project link")
+	}
+	if _, err := os.Stat(filepath.Join(ws, ".agents", "skills", "a", "scripts", "s.sh")); err != nil {
+		t.Fatal(err)
+	}
+	// A second delivery of the same names refuses before placing anything.
+	os.RemoveAll(filepath.Join(ws, ".agents", "skills", "a"))
+	_, err = Prepare(Request{Strategy: ProjectLink, Layout: ".agents/skills", Scratch: t.TempDir(), Workspace: ws, Items: []Item{skill(t, "a"), skill(t, "b")}})
+	if domain.CodeOf(err) != domain.ErrSkillUnavailable {
+		t.Fatalf("clash: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(ws, ".agents", "skills", "a")); !os.IsNotExist(err) {
+		t.Fatal("partial delivery left behind")
+	}
+}

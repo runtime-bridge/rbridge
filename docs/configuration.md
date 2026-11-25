@@ -20,7 +20,7 @@ rbridge reads YAML from these layers, later ones winning; maps merge and lists a
 | `<id>.model` | runtime default | Model used when a task does not choose one |
 | `<id>.args` | manifest | Replace the launch arguments (for example `--experimental-acp` for older Gemini CLI) |
 | `<id>.allow_account_login` | `false` | Use an account login for providers that need an API key by default (Gemini CLI). Ignored for `claude-acp` |
-| `custom` | `[]` | ACP agents: `id`, `display_name`, `launch.command`, `launch.args`, `launch.env_passthrough`, `version_args` |
+| `custom` | `[]` | ACP agents: `id`, `display_name`, `launch.command`, `launch.args`, `launch.env_passthrough`, `version_args`, `skills_dir` (project folder the agent reads skills from, such as `.agents/skills`; enables per-session skills) |
 
 Built-in providers: `claude-code`, `opencode`, `codex` (codex-acp), `gemini-cli`, `claude-acp` (API key only).
 

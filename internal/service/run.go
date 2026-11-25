@@ -316,6 +316,13 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	if err != nil {
 		return fail(err)
 	}
+	if len(plan.ProjectLinks) > 0 {
+		inner := fail
+		fail = func(err error) (*Session, error) {
+			s.untrackProjectLinks(rec.ID)
+			return inner(err)
+		}
+	}
 	rec.Skills = plan.Deliveries
 	pctx := policy.Context{Workspace: t.Workspace, Skills: map[string]domain.TrustState{}}
 	for id, dir := range plan.Paths {
@@ -473,14 +480,24 @@ func (s *Service) prepareSkills(ctx context.Context, m registry.Manifest, t doma
 		items = append(items, deliver.Item{Record: rec, Dir: dir, Scripts: rec.Trust.ScriptsAllowed(), ScriptFiles: sk.Scripts})
 		trusts[id] = skillTrust{trust: rec.Trust, lib: dir}
 	}
+	if deliver.Strategy(m.Skills.Strategy) == deliver.ProjectLink {
+		s.reapProjectLinks(ctx, t.Workspace)
+	}
 	plan, err := deliver.Prepare(deliver.Request{
-		Strategy: deliver.Strategy(m.Skills.Strategy), Layout: m.Skills.SessionDir, Scratch: scratch, Items: items, Getenv: s.getenv,
+		Strategy: deliver.Strategy(m.Skills.Strategy), Layout: m.Skills.SessionDir, Scratch: scratch, Workspace: t.Workspace, Items: items, Getenv: s.getenv,
 	})
 	if err != nil {
 		return plan, nil, err
 	}
+	if err := s.trackProjectLinks(ctx, seq.session, t.Workspace, plan.ProjectLinks); err != nil {
+		removeProjectLinks(plan.ProjectLinks)
+		return plan, nil, err
+	}
 	loc := s.skillLocations(m)
 	for _, c := range deliver.FindClashes(t.Skills, t.Workspace, loc.Project, loc.User) {
+		if slices.Contains(plan.ProjectLinks, c.Path) {
+			continue
+		}
 		seq.Emit(domain.NewEvent(domain.EventNotice, domain.NoticeData{Level: "warn", Message: fmt.Sprintf("another skill named %s exists at %s; %s may use that copy instead", c.SkillID, c.Path, m.DisplayName)}))
 	}
 	for _, d := range plan.Deliveries {
@@ -579,6 +596,7 @@ func (s *Session) Close(ctx context.Context) error {
 	if s.sink.log != nil {
 		s.sink.log.Close()
 	}
+	s.svc.untrackProjectLinks(s.rec.ID)
 	os.RemoveAll(s.scratch)
 	s.mu.Lock()
 	s.rec.State = domain.StateClosed

@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/runtime-bridge/rbridge/internal/config"
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
 )
 
 func TestPermanentDelivery(t *testing.T) {
@@ -103,5 +105,64 @@ func TestPermanentDelivery(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(own, "SKILL.md")); string(b) != "the user's own" {
 		t.Fatal("the user's own skill was touched")
+	}
+}
+
+func TestProjectLinkDelivery(t *testing.T) {
+	bin := buildFakeAgent(t)
+	h := newRunHarness(t)
+	h.cfg.Providers.Custom = []config.CustomProvider{{
+		ID: "linked", Launch: config.LaunchConfig{Command: bin, EnvPassthrough: []string{fakeacp.EnvScenario}},
+		SkillsDir: ".agents/skills",
+	}}
+	h.env[fakeacp.EnvScenario] = "echo"
+	svc := h.svc()
+	ctx := context.Background()
+	addSkill(t, svc, "api-style", domain.TrustReviewed)
+	ws := h.workspace()
+	os.MkdirAll(filepath.Join(ws, ".git", "info"), 0o755)
+	link := filepath.Join(ws, ".agents", "skills", "api-style")
+	exclude := filepath.Join(ws, ".git", "info", "exclude")
+
+	// A link left by a session that died is cleaned up first.
+	os.MkdirAll(filepath.Dir(link), 0o755)
+	os.Symlink(t.TempDir(), link)
+	if err := svc.trackProjectLinks(ctx, "ses_gone", ws, []string{link}); err != nil {
+		t.Fatal(err)
+	}
+
+	task := domain.Task{Workspace: ws, Prompt: domain.Text("x"), Provider: "linked", Skills: []string{"api-style"}}
+	sess, err := svc.OpenSession(ctx, task, RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(link, "SKILL.md")); err != nil {
+		t.Fatalf("skill not visible in the project during the session: %v", err)
+	}
+	if d := sess.Record().Skills; len(d) != 1 || !strings.HasPrefix(d[0].Mode, "project-link") {
+		t.Fatalf("deliveries %+v", d)
+	}
+	if ex, _ := os.ReadFile(exclude); string(ex) != "/.agents/skills/api-style\n" {
+		t.Fatalf("exclude during session %q", ex)
+	}
+	if res, err := sess.Prompt(ctx, domain.Text("hi")); err != nil || res.Output != "echo: hi" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	sess.Close(ctx)
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Fatal("link left in the project after the session")
+	}
+	if ex, _ := os.ReadFile(exclude); string(ex) != "" {
+		t.Fatalf("exclude after session %q", ex)
+	}
+
+	// The project's own skill of the same name is never replaced.
+	os.MkdirAll(link, 0o755)
+	os.WriteFile(filepath.Join(link, "SKILL.md"), []byte("project's own"), 0o644)
+	if _, err := svc.OpenSession(ctx, task, RunOptions{}); domain.CodeOf(err) != domain.ErrSkillUnavailable {
+		t.Fatalf("clash: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(link, "SKILL.md")); string(b) != "project's own" {
+		t.Fatal("project skill touched")
 	}
 }

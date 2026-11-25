@@ -302,3 +302,93 @@ func readLines(file string) ([]string, error) {
 	}
 	return lines, sc.Err()
 }
+
+const projectLinkCollection = "projectlinks"
+
+// projectLink is a skill linked into a project for one session.
+type projectLink struct {
+	Session   string `json:"session"`
+	Workspace string `json:"workspace"`
+	Path      string `json:"path"`
+	Excluded  string `json:"git_exclude,omitempty"`
+}
+
+func (s *Service) trackProjectLinks(ctx context.Context, session, workspace string, links []string) error {
+	for _, l := range links {
+		pl := projectLink{Session: session, Workspace: workspace, Path: l}
+		if line, err := gitExclude(workspace, l); err == nil {
+			pl.Excluded = line
+		}
+		if err := s.store.Put(ctx, projectLinkCollection, deliveryKey(l), pl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) projectLinks(ctx context.Context) []projectLink {
+	keys, _ := s.store.List(ctx, projectLinkCollection)
+	var out []projectLink
+	for _, k := range keys {
+		var pl projectLink
+		if ok, _ := s.store.Get(ctx, projectLinkCollection, k, &pl); ok {
+			out = append(out, pl)
+		}
+	}
+	return out
+}
+
+func (s *Service) dropProjectLink(ctx context.Context, pl projectLink) {
+	removeProjectLinks([]string{pl.Path})
+	if pl.Excluded != "" {
+		_ = gitUnexclude(pl.Workspace, pl.Excluded)
+	}
+	_ = s.store.Delete(ctx, projectLinkCollection, deliveryKey(pl.Path))
+}
+
+// untrackProjectLinks removes the links a session placed in its project.
+func (s *Service) untrackProjectLinks(session string) {
+	ctx := context.Background()
+	for _, pl := range s.projectLinks(ctx) {
+		if pl.Session == session {
+			s.dropProjectLink(ctx, pl)
+		}
+	}
+}
+
+// reapProjectLinks removes links left in a workspace by sessions that are no
+// longer running, for example after a crash.
+func (s *Service) reapProjectLinks(ctx context.Context, workspace string) {
+	for _, pl := range s.projectLinks(ctx) {
+		if pl.Workspace != workspace {
+			continue
+		}
+		rec, err := s.SessionRecord(ctx, pl.Session)
+		if err == nil {
+			switch rec.State {
+			case domain.StateClosed, domain.StateFailed, domain.StateInterrupted:
+			default:
+				if s.live(rec) {
+					continue
+				}
+			}
+		}
+		s.dropProjectLink(ctx, pl)
+	}
+}
+
+// removeProjectLinks deletes links, or copies made where links are not
+// available, that rbridge placed in a project.
+func removeProjectLinks(paths []string) {
+	for _, p := range paths {
+		fi, err := os.Lstat(p)
+		if err != nil {
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			os.Remove(p)
+		} else {
+			os.RemoveAll(p)
+		}
+	}
+}

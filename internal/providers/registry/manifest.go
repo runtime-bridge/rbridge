@@ -242,13 +242,15 @@ func GeminiCLI() Manifest {
 			EnvPassthrough: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "GOOGLE_APPLICATION_CREDENTIALS", "GEMINI_MODEL"},
 		},
 		Skills: SkillDirs{
-			Project: []string{".gemini/skills", ".agents/skills"},
-			User:    []string{"~/.gemini/skills", "~/.agents/skills"},
+			Project:    []string{".gemini/skills", ".agents/skills"},
+			User:       []string{"~/.gemini/skills", "~/.agents/skills"},
+			SessionDir: ".agents/skills",
+			Strategy:   "project-link",
 		},
 		Capabilities: caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
 			domain.CapStreaming: yes("acp session/update"),
 			domain.CapCancel:    yes("session/cancel"),
-			domain.CapSkills:    partial("native discovery only; no per-session delivery yet"),
+			domain.CapSkills:    partial("native discovery; per-session delivery links skills into the project's .agents/skills (not yet verified against a live install)"),
 			domain.CapApprovals: yes("session/request_permission"),
 			domain.CapOffline:   no(),
 		}),
@@ -279,12 +281,14 @@ func Codex() Manifest {
 			EnvPassthrough: []string{"CODEX_API_KEY", "OPENAI_API_KEY", "CODEX_HOME", "NO_BROWSER"},
 		},
 		Skills: SkillDirs{
-			Project: []string{".agents/skills"},
+			Project:    []string{".agents/skills"},
+			SessionDir: ".agents/skills",
+			Strategy:   "project-link",
 		},
 		Capabilities: caps(domain.SourceManifest, map[domain.CapabilityName]domain.Capability{
 			domain.CapStreaming: yes("acp session/update"),
 			domain.CapCancel:    yes("session/cancel"),
-			domain.CapSkills:    partial("native discovery only; no per-session delivery yet"),
+			domain.CapSkills:    partial("native discovery; per-session delivery links skills into the project's .agents/skills (not yet verified against a live install)"),
 			domain.CapApprovals: yes("session/request_permission"),
 			domain.CapOffline:   no(),
 		}),
@@ -355,6 +359,10 @@ func FromCustom(c config.CustomProvider) Manifest {
 			EnvPassthrough: c.Launch.EnvPassthrough,
 		},
 		Capabilities: domain.CapabilitySet{},
+	}
+	if c.SkillsDir != "" {
+		m.Skills = SkillDirs{Project: []string{c.SkillsDir}, SessionDir: c.SkillsDir, Strategy: "project-link"}
+		m.Capabilities[domain.CapSkills] = partial("per-session delivery links skills into " + c.SkillsDir)
 	}
 	return m
 }
