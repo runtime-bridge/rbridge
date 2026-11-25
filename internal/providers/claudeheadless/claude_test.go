@@ -131,7 +131,7 @@ func TestMCPConfigWritten(t *testing.T) {
 }
 
 func TestToolKinds(t *testing.T) {
-	cases := map[string]string{"Read": "read", "Write": "edit", "Edit": "edit", "Bash": "execute", "Grep": "search", "WebFetch": "fetch", "Mystery": "other"}
+	cases := map[string]string{"Read": "read", "Write": "edit", "Edit": "edit", "Bash": "execute", "Grep": "search", "WebFetch": "fetch", "Skill": "read", "Mystery": "other"}
 	for in, want := range cases {
 		if got := toolKind(in); got != want {
 			t.Errorf("%s -> %s, want %s", in, got, want)

@@ -670,7 +670,9 @@ func toolKind(name string) string {
 	case "WebFetch", "WebSearch":
 		return "fetch"
 	case "Skill":
-		return "other"
+		// Loading a skill reads its instructions; any script it then runs goes
+		// through Bash and is judged as a command.
+		return "read"
 	}
 	return "other"
 }

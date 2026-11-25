@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Claude Code's Skill tool counts as a read, so read-only profiles such as `observe` can load the skills rbridge delivers. Scripts a skill runs are still judged as commands.
+
 - Examples: `go-release-notes` (embedded Go library), `python-security-review` (Python SDK) and `ts-ops-check` (Node.js SDK), each with its own skill and a smoke test in CI. The SDKs gain calls to add, trust and search skills.
 
 - Optional OS sandbox on Linux (`--sandbox files|full`, `sandbox.mode`, `policy.custom.sandbox`): bubblewrap when it works, Docker otherwise. Only the workspace, the session folder and the runtime's own folders are writable; `full` also removes the network. Terminal commands run in the same sandbox. The enforcement notice, session record and audit log show the engine and mode, and a task that asks for a sandbox fails rather than running without one.
