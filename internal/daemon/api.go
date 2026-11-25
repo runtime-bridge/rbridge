@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync/atomic"
 	"time"
 
 	"github.com/runtime-bridge/rbridge/internal/buildinfo"
@@ -23,6 +24,8 @@ type API struct {
 	Hub     *Hub
 	Svc     *service.Service
 	Started time.Time
+	// Connections counts open IPC connections, for the idle exit.
+	Connections atomic.Int64
 }
 
 // Method handles one call. params is the JSON object sent by the client.

@@ -91,6 +91,10 @@ type Options struct {
 	Logger  *slog.Logger
 	// Ready, if set, is called once the listeners are up.
 	Ready func(State)
+	// ExitWhenIdle, when above zero, stops the daemon once it has had no
+	// open session and no connected client for this long. The SDKs set it
+	// for a daemon they start themselves, so it does not linger.
+	ExitWhenIdle time.Duration
 }
 
 // Run serves until ctx is cancelled.
@@ -208,6 +212,14 @@ func Run(ctx context.Context, o Options) error {
 
 	reap := time.NewTicker(time.Minute)
 	defer reap.Stop()
+	var idleTick <-chan time.Time
+	if o.ExitWhenIdle > 0 {
+		every := min(o.ExitWhenIdle/4, 15*time.Second)
+		t := time.NewTicker(max(every, 10*time.Millisecond))
+		defer t.Stop()
+		idleTick = t.C
+	}
+	lastBusy := time.Now()
 	lastPrune := time.Time{}
 	var runErr error
 loop:
@@ -218,6 +230,13 @@ loop:
 		case err := <-errs:
 			runErr = err
 			break loop
+		case <-idleTick:
+			if hub.Len() > 0 || api.Connections.Load() > 0 {
+				lastBusy = time.Now()
+			} else if time.Since(lastBusy) >= o.ExitWhenIdle {
+				log.Info("rbridge daemon idle, exiting", "after", o.ExitWhenIdle.String())
+				break loop
+			}
 		case <-reap.C:
 			if n := hub.Reap(context.Background()); n > 0 {
 				log.Info("closed idle sessions", "count", n)

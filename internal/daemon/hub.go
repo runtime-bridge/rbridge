@@ -535,6 +535,13 @@ func (h *Hub) close(ctx context.Context, l *live) error {
 	return err
 }
 
+// Len is the number of open sessions.
+func (h *Hub) Len() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.sessions)
+}
+
 // Reap closes sessions idle for longer than the idle timeout.
 func (h *Hub) Reap(ctx context.Context) int {
 	if h.idleTimeout <= 0 {

@@ -44,8 +44,10 @@ func ServeIPC(ctx context.Context, l net.Listener, api *API) error {
 			return err
 		}
 		wg.Add(1)
+		api.Connections.Add(1)
 		go func() {
 			defer wg.Done()
+			defer api.Connections.Add(-1)
 			(&ipcConn{conn: c, api: api, methods: methods}).serve(ctx)
 		}()
 	}

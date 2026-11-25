@@ -20,16 +20,25 @@ func cmdDaemon(ctx context.Context, args []string, env Env) error {
 		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge daemon start|stop|status|run")
 	}
 	switch args[0] {
-	case "run":
-		return daemonRun(ctx, env)
-	case "start":
-		return daemonStart(ctx, env)
+	case "run", "start":
+		fs := newFlags("daemon "+args[0], env)
+		idle := fs.Duration("exit-when-idle", 0, "stop after this long with no open session and no connected client (0: never)")
+		if _, err := parse(fs, args[1:]); err != nil {
+			return err
+		}
+		if *idle < 0 {
+			return domain.Errorf(domain.ErrInvalidInput, "--exit-when-idle must not be negative")
+		}
+		if args[0] == "run" {
+			return daemonRun(ctx, env, *idle)
+		}
+		return daemonStart(ctx, env, *idle)
 	case "stop":
 		return daemonStop(env)
 	case "status":
 		return daemonStatus(env)
 	}
-	return domain.Errorf(domain.ErrInvalidInput, "unknown daemon command %q (start, stop, status, run)", args[0])
+	return unknownSub("daemon", args[0], []string{"start", "stop", "status", "run"})
 }
 
 func daemonFiles(env Env) (daemon.Files, error) {
@@ -40,14 +49,14 @@ func daemonFiles(env Env) (daemon.Files, error) {
 	return daemon.FilesFor(svc.Paths()), nil
 }
 
-func daemonRun(ctx context.Context, env Env) error {
+func daemonRun(ctx context.Context, env Env, idle time.Duration) error {
 	svc, err := newService(env)
 	if err != nil {
 		return err
 	}
 	f := daemon.FilesFor(svc.Paths())
 	logger := slog.New(slog.NewTextHandler(env.Stderr, nil))
-	err = daemon.Run(ctx, daemon.Options{Service: svc, Config: svc.Config(), Files: f, Logger: logger})
+	err = daemon.Run(ctx, daemon.Options{Service: svc, Config: svc.Config(), Files: f, Logger: logger, ExitWhenIdle: idle})
 	if errors.Is(err, daemon.ErrAlreadyRunning) {
 		return domain.Errorf(domain.ErrInvalidInput, "%v", err)
 	}
@@ -72,7 +81,7 @@ func alive(f daemon.Files) bool {
 	return true
 }
 
-func daemonStart(ctx context.Context, env Env) error {
+func daemonStart(ctx context.Context, env Env, idle time.Duration) error {
 	f, err := daemonFiles(env)
 	if err != nil {
 		return err
@@ -94,7 +103,11 @@ func daemonStart(ctx context.Context, env Env) error {
 		return err
 	}
 	defer logf.Close()
-	cmd := exec.Command(exe, "daemon", "run")
+	runArgs := []string{"daemon", "run"}
+	if idle > 0 {
+		runArgs = append(runArgs, "--exit-when-idle", idle.String())
+	}
+	cmd := exec.Command(exe, runArgs...)
 	cmd.Env = env.Environ()
 	cmd.Dir = env.Home
 	cmd.Stdout, cmd.Stderr = logf, logf

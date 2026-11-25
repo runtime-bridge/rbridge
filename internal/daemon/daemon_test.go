@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,7 +54,7 @@ type env struct {
 }
 
 // start runs a daemon over fake runtimes. scenarios sets the fake behaviour.
-func start(t *testing.T, scenarios map[string]string) *env {
+func start(t *testing.T, scenarios map[string]string, opts ...func(*daemon.Options)) *env {
 	t.Helper()
 	home, _ := filepath.EvalSymlinks(t.TempDir())
 	bin := filepath.Join(home, "bin")
@@ -103,9 +104,11 @@ func start(t *testing.T, scenarios map[string]string) *env {
 	os.MkdirAll(e.ws, 0o755)
 	ready := make(chan daemon.State, 1)
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		e.done <- daemon.Run(ctx, daemon.Options{Service: svc, Config: cfg, Files: e.files, Ready: func(s daemon.State) { ready <- s }})
-	}()
+	o := daemon.Options{Service: svc, Config: cfg, Files: e.files, Ready: func(s daemon.State) { ready <- s }}
+	for _, f := range opts {
+		f(&o)
+	}
+	go func() { e.done <- daemon.Run(ctx, o) }()
 	select {
 	case e.state = <-ready:
 	case err := <-e.done:
@@ -550,5 +553,32 @@ func TestAddManySkillsOverHTTP(t *testing.T) {
 	}
 	if resp, _ := e.req("POST", "/v1/skills/batch", "", map[string]any{"paths": []string{"relative/dir"}}, nil); resp.StatusCode != 400 {
 		t.Fatalf("relative path accepted: %d", resp.StatusCode)
+	}
+}
+
+func TestExitWhenIdle(t *testing.T) {
+	e := start(t, nil, func(o *daemon.Options) { o.ExitWhenIdle = 300 * time.Millisecond })
+	// A connected client keeps it running.
+	c, err := net.Dial("unix", e.state.Socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-e.done:
+		t.Fatalf("exited with a client connected: %v", err)
+	case <-time.After(time.Second):
+	}
+	c.Close()
+	select {
+	case err := <-e.done:
+		if err != nil {
+			t.Fatalf("idle exit returned %v", err)
+		}
+		e.done <- nil // let the cleanup's stop return
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not exit once idle")
+	}
+	if _, err := os.Stat(e.state.Socket); !os.IsNotExist(err) {
+		t.Fatalf("socket left behind: %v", err)
 	}
 }
