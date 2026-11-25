@@ -408,3 +408,60 @@ func TestSkillsAddManyAndPatterns(t *testing.T) {
 		t.Fatalf("remove: %+v", r)
 	}
 }
+
+func TestInit(t *testing.T) {
+	f := newFakeCLI(t)
+	home := filepath.Join(f.home, "fresh")
+	f.vars["RBRIDGE_HOME"] = home
+	cfgFile := filepath.Join(home, "config", "config.yaml")
+
+	if r := f.run("", "init"); r.code != 0 || !strings.Contains(r.stdout, "wrote a starter file") {
+		t.Fatalf("starter: %+v", r)
+	}
+	for _, d := range []string{"config", "data", "cache", "run"} {
+		if _, err := os.Stat(filepath.Join(home, d)); err != nil {
+			t.Fatalf("%s not created: %v", d, err)
+		}
+	}
+	if r := f.run("", "config"); r.code != 0 || !strings.Contains(r.stdout, "user     loaded "+cfgFile) {
+		t.Fatalf("the starter file should load: %+v", r)
+	}
+	if r := f.run("", "init"); !strings.Contains(r.stdout, "already up to date") {
+		t.Fatalf("second run: %+v", r)
+	}
+
+	mine := filepath.Join(f.home, "mine.yaml")
+	os.WriteFile(mine, []byte("version: 1\nexecution:\n  max_concurrent_sessions: 3\n"), 0o644)
+	if r := f.run("", "init", "--config", mine); r.code == 0 || !strings.Contains(r.stderr, "--force") {
+		t.Fatalf("a different file was replaced without --force: %+v", r)
+	}
+	if r := f.run("", "init", "--config", mine, "--force"); r.code != 0 || !strings.Contains(r.stdout, "replaced") {
+		t.Fatalf("force: %+v", r)
+	}
+	if b, _ := os.ReadFile(cfgFile + ".bak"); !strings.Contains(string(b), "rbridge configuration") {
+		t.Fatal("the old configuration was not kept as a backup")
+	}
+	if r := f.run("", "init", "--config", mine); r.code != 0 || !strings.Contains(r.stdout, "already up to date") {
+		t.Fatalf("same file again: %+v", r)
+	}
+
+	bad := filepath.Join(f.home, "bad.yaml")
+	os.WriteFile(bad, []byte("execution:\n  resource_ceiling_percent: 500\n"), 0o644)
+	if r := f.run("", "init", "--config", bad, "--force"); r.code == 0 || !strings.Contains(r.stderr, "not a valid rbridge configuration") {
+		t.Fatalf("bad file: %+v", r)
+	}
+	if b, _ := os.ReadFile(cfgFile); !strings.Contains(string(b), "max_concurrent_sessions: 3") {
+		t.Fatal("a bad file overwrote the configuration")
+	}
+
+	skills := t.TempDir()
+	for _, name := range []string{"evidence-rules", "draft-notes"} {
+		os.Rename(writeSkill(t, name), filepath.Join(skills, name))
+	}
+	if r := f.run("", "init", "--skills", skills, "--exclude", "draft-*", "--trust", "reviewed"); r.code != 0 || !strings.Contains(r.stdout, "added evidence-rules") || !strings.Contains(r.stdout, "trust reviewed") {
+		t.Fatalf("skills: %+v", r)
+	}
+	if r := f.run("", "init", "--trust", "reviewed"); r.code == 0 {
+		t.Fatal("--trust without --skills should fail")
+	}
+}

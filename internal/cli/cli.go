@@ -57,6 +57,7 @@ Usage:
   rbridge providers show <id>                  Capabilities, skill locations and limits
   rbridge providers accept <id>                Accept a changed runtime executable
   rbridge doctor [--json]                      Check configuration, directories and runtimes
+  rbridge init [--config FILE] [--skills DIR]  Create rbridge's home and configuration; add skills
   rbridge config [--defaults]                  Print the effective configuration and its layers
 
   rbridge run [flags] "<prompt>"               Run one task and print the answer
@@ -119,6 +120,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		err = cmdMCP(ctx, args[1:], env)
 	case "config":
 		err = cmdConfig(ctx, args[1:], env)
+	case "init":
+		err = cmdInit(ctx, args[1:], env)
 	default:
 		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q; run rbridge help", args[0])
 	}
