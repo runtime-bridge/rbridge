@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+    <img src="docs/assets/logo-light.png" alt="rbridge" width="220">
+  </picture>
+</p>
+
 # rbridge
 
 rbridge lets software on your machine use the agent runtimes you already have installed, such as Claude Code and OpenCode, through one interface, and carries Agent Skills to them in the way each runtime expects.
@@ -18,7 +25,7 @@ Early development, not tagged yet. What works today:
 
 - `rbridge daemon` serves several applications over a local socket and, if enabled, local HTTP.
 
-More runtimes and SDKs for other languages come next. See the roadmap below.
+Codex, Gemini CLI and any ACP agent are supported too, with SDKs for Node.js and Python. See the roadmap below.
 
 ## Install
 
