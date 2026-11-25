@@ -52,6 +52,8 @@ rbridge run --skill one-line-summary --profile observe "Use the one-line-summary
 
 New skills start as `unreviewed` and are refused until you trust them. rbridge hands the skill to the runtime for this run only.
 
+With a folder that holds several skills, add them all at once: `rbridge skills add ~/rbridge-skills`. Add `--dry-run` to see what it finds first, `--only` or `--exclude` with names or patterns to choose, and `--trust reviewed` once you have read them.
+
 ## 5. Use it from your own program
 
 Go, embedded in your process:

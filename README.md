@@ -71,6 +71,17 @@ $ rbridge skills trust security-audit reviewed
 $ rbridge run --skill security-audit "Audit this project"
 ```
 
+A folder of skills goes in with one command: rbridge finds every folder with a `SKILL.md` below it. Pick with names or patterns, preview first, and trust them in the same step when they are your own:
+
+```sh
+$ rbridge skills add ./skills                                  # every skill found under ./skills
+$ rbridge skills add ./skills --exclude 'draft-*' --dry-run    # see what would be added
+$ rbridge skills add ./skills --only metric-discovery,metric-verification --trust reviewed
+$ rbridge skills trust 'metric-*' reviewed                     # trust and remove also take several ids or patterns
+```
+
+A Git repository works the same way: `--subdir` may be repeated, and without it every skill in the repository is found. One skill failing to validate does not stop the others; each is reported, and the command exits non-zero if any failed.
+
 Skills use the [Agent Skills](https://agentskills.io/specification) format unchanged. Each installed skill has a SHA-256 digest of its files; if the files change, rbridge refuses to use it until it is added again. Trust states:
 
 | Trust | Instructions delivered | Scripts delivered |

@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Adding many skills at once: `rbridge skills add` finds every skill below the folders it is given (or in a Git repository, with `--subdir` repeatable), with `--only` and `--exclude` taking names or patterns such as `metric-*`, `--dry-run` to preview, and `--trust` applied to every skill added. One invalid skill does not stop the rest. `rbridge skills trust` and `rbridge skills remove` take several ids or patterns. The daemon gains `skills.add_many` (`POST /v1/skills/batch`), the Go library `AddSkills` and `AddSkillsFromGit`, and the SDKs `addSkills` and `add_skills`.
+
 - Resource governor: with `execution.resource_ceiling_percent` set, the number of sessions allowed at once follows the machine's CPU and memory load, from every configured slot down to one at the ceiling, never zero. `rbridge doctor` shows the current reading.
 
 - Claude Code's Skill tool counts as a read, so read-only profiles such as `observe` can load the skills rbridge delivers. Scripts a skill runs are still judged as commands.
