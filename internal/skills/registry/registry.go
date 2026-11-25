@@ -97,43 +97,68 @@ func (r *Registry) addLocal(ctx context.Context, req AddRequest) (AddResult, err
 var fullHash = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
 func (r *Registry) addGit(ctx context.Context, req AddRequest) (AddResult, error) {
-	if !strings.HasPrefix(req.URL, "https://") && !strings.HasPrefix(req.URL, "file://") && !strings.HasPrefix(req.URL, "ssh://") && !strings.HasPrefix(req.URL, "git@") {
-		return AddResult{}, domain.Errorf(domain.ErrInvalidInput, "Git URL must use https, ssh or file")
-	}
-	if req.Rev == "" {
-		return AddResult{}, domain.Errorf(domain.ErrInvalidInput, "a Git revision is required (--rev)")
-	}
-	if r.RequirePinned && !fullHash.MatchString(req.Rev) {
-		return AddResult{}, domain.Errorf(domain.ErrInvalidInput, "Git revision must be a full commit hash; set skills.git_require_pinned_revision: false to allow branches and tags")
-	}
-	if strings.Contains(req.Subdir, "..") || filepath.IsAbs(req.Subdir) {
-		return AddResult{}, domain.Errorf(domain.ErrInvalidInput, "subdir must be a relative path inside the repository")
-	}
-	if err := os.MkdirAll(r.Dir, 0o700); err != nil {
+	if err := checkSubdir(req.Subdir); err != nil {
 		return AddResult{}, err
 	}
-	tmp, err := os.MkdirTemp(r.Dir, ".git-")
+	repo, commit, cleanup, err := r.fetchGit(ctx, req.URL, req.Rev)
 	if err != nil {
 		return AddResult{}, err
 	}
-	defer os.RemoveAll(tmp)
-	repo := filepath.Join(tmp, "repo")
+	defer cleanup()
+	return r.installGitDir(ctx, req, repo, commit, req.Subdir)
+}
+
+func checkSubdir(subdir string) error {
+	if strings.Contains(subdir, "..") || filepath.IsAbs(subdir) {
+		return domain.Errorf(domain.ErrInvalidInput, "subdir must be a relative path inside the repository")
+	}
+	return nil
+}
+
+// fetchGit checks out one revision of a repository into a temporary folder
+// and returns it with the resolved commit; cleanup removes the folder.
+func (r *Registry) fetchGit(ctx context.Context, url, rev string) (repo, commit string, cleanup func(), err error) {
+	cleanup = func() {}
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "file://") && !strings.HasPrefix(url, "ssh://") && !strings.HasPrefix(url, "git@") {
+		return "", "", cleanup, domain.Errorf(domain.ErrInvalidInput, "Git URL must use https, ssh or file")
+	}
+	if rev == "" {
+		return "", "", cleanup, domain.Errorf(domain.ErrInvalidInput, "a Git revision is required (--rev)")
+	}
+	if r.RequirePinned && !fullHash.MatchString(rev) {
+		return "", "", cleanup, domain.Errorf(domain.ErrInvalidInput, "Git revision must be a full commit hash; set skills.git_require_pinned_revision: false to allow branches and tags")
+	}
+	if err := os.MkdirAll(r.Dir, 0o700); err != nil {
+		return "", "", cleanup, err
+	}
+	tmp, err := os.MkdirTemp(r.Dir, ".git-")
+	if err != nil {
+		return "", "", cleanup, err
+	}
+	cleanup = func() { os.RemoveAll(tmp) }
+	repo = filepath.Join(tmp, "repo")
 	steps := [][]string{
 		{"init", "-q", repo},
-		{"-C", repo, "remote", "add", "origin", req.URL},
-		{"-C", repo, "fetch", "-q", "--depth", "1", "origin", req.Rev},
+		{"-C", repo, "remote", "add", "origin", url},
+		{"-C", repo, "fetch", "-q", "--depth", "1", "origin", rev},
 		{"-C", repo, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD"},
 	}
 	for _, s := range steps {
 		if _, err := r.git(ctx, tmp, s...); err != nil {
-			return AddResult{}, err
+			cleanup()
+			return "", "", func() {}, err
 		}
 	}
-	commit, err := r.git(ctx, tmp, "-C", repo, "rev-parse", "HEAD")
+	commit, err = r.git(ctx, tmp, "-C", repo, "rev-parse", "HEAD")
 	if err != nil {
-		return AddResult{}, err
+		cleanup()
+		return "", "", func() {}, err
 	}
-	dir := filepath.Join(repo, filepath.FromSlash(req.Subdir))
+	return repo, strings.TrimSpace(commit), cleanup, nil
+}
+
+func (r *Registry) installGitDir(ctx context.Context, req AddRequest, repo, commit, subdir string) (AddResult, error) {
+	dir := filepath.Join(repo, filepath.FromSlash(subdir))
 	sk, err := spec.Parse(dir, r.Limits)
 	if err != nil {
 		return AddResult{}, invalid(err)
@@ -143,7 +168,7 @@ func (r *Registry) addGit(ctx context.Context, req AddRequest) (AddResult, error
 			return AddResult{}, err
 		}
 	}
-	return r.install(ctx, sk, domain.SkillSource{Type: "git", URL: req.URL, Revision: strings.TrimSpace(commit), Subdir: req.Subdir, Lock: req.Lock}, dir)
+	return r.install(ctx, sk, domain.SkillSource{Type: "git", URL: req.URL, Revision: commit, Subdir: subdir, Lock: req.Lock}, dir)
 }
 
 func (r *Registry) git(ctx context.Context, dir string, args ...string) (string, error) {
