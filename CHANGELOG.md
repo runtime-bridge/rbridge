@@ -2,9 +2,11 @@
 
 ## v1.0.0 (unreleased)
 
+- Easier to use: a mistyped command, subcommand or provider gets a "did you mean" and the list of choices, `ls`, `rm` and `info` work as aliases, and `RBRIDGE_HOME` may be relative (such as `.rbridge`). `rbridge daemon start --exit-when-idle 30m` stops the daemon once nothing has used it for that long. The SDKs start a daemon when none is running (one that stops after 30 idle minutes; `start=False` turns this off), take a plain prompt as a task, and default the workspace to the current folder, resolving relative paths.
+
 - `rbridge uninstall` lists the program and its data folders and removes them with `--yes` (and `--purge` for the data); for a copy that came with an SDK it names the package manager instead.
 
-- Per-project installs: the Python wheels and npm packages for Linux, macOS and Windows carry rbridge, keep its data in the project's `.rbridge` folder, and can start their own daemon (`connect(start=True)`, `connect({ start: true })`). The Node.js package is now `@runtime-bridge/sdk`.
+- Per-project installs: the Python wheels and npm packages for Linux, macOS and Windows carry rbridge, keep its data in the project's `.rbridge` folder, and can start their own daemon (`connect(start=True)`, `connect({ start: true })`). The Node.js package is now `@rbridge/sdk`.
 
 - `rbridge init` creates rbridge's folders and a configuration file: a commented starter, or with `--config FILE` your own, checked before it is written. A different existing file is replaced only with `--force`, which keeps a backup. `--skills DIR` (with `--only`, `--exclude` and `--trust`) adds a folder of skills in the same step. Running it again is safe.
 
@@ -44,7 +46,7 @@
 - Any ACP agent can be added through `providers.custom` alone; it passes the same contract suite as the built-in adapters.
 - `rbridge mcp`: rbridge as an MCP server for other agents.
 - `rbridge config` prints the effective configuration and its layers; `providers.<id>.model` sets a default model and `providers.<id>.args` replaces launch arguments.
-- SDKs: `@runtime-bridge/sdk` for Node.js and `rbridge` for Python, both without dependencies.
+- SDKs: `@rbridge/sdk` for Node.js and `rbridge` for Python, both without dependencies.
 - Install script that verifies checksums and, when cosign is present, signatures.
 - Docs: getting started, configuration reference, threat model, performance, releasing.
 - The daemon moves its socket to a short temp path when the runtime directory is too deep for a Unix socket; clients find it through `daemon.json`.
