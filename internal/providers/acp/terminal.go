@@ -131,6 +131,10 @@ func (c *client) CreateTerminal(ctx context.Context, p sdk.CreateTerminalRequest
 	if err != nil {
 		return sdk.CreateTerminalResponse{}, sdk.NewRequestError(-32002, "command not found: "+p.Command, nil)
 	}
+	cmdArgs := p.Args
+	if s.opts.Launcher != nil {
+		path, cmdArgs, env = s.opts.Launcher.Command(path, cmdArgs, env, cwd)
+	}
 	limit := s.opts.MaxOutputBytes
 	if limit <= 0 {
 		limit = 1 << 20
@@ -139,7 +143,7 @@ func (c *client) CreateTerminal(ctx context.Context, p sdk.CreateTerminalRequest
 		limit = *p.OutputByteLimit
 	}
 	out := &tailBuffer{max: int(limit)}
-	cmd := exec.Command(path, p.Args...)
+	cmd := exec.Command(path, cmdArgs...)
 	cmd.Dir = cwd
 	cmd.Env = env
 	cmd.Stdout, cmd.Stderr = out, out

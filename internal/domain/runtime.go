@@ -48,6 +48,17 @@ type SessionOptions struct {
 	// Elicitor answers questions the runtime asks the user. Nil means the
 	// runtime is told the client cannot answer questions.
 	Elicitor Elicitor
+	// Launcher, when set, rewrites how the runtime and the commands rbridge
+	// runs for it are started, for example inside a sandbox.
+	Launcher Launcher
+}
+
+// Launcher rewrites a command line before it starts.
+type Launcher interface {
+	// Main is used for the runtime process itself.
+	Main(path string, args, env []string, dir string) (string, []string, []string)
+	// Command is used for commands rbridge runs on the runtime's behalf.
+	Command(path string, args, env []string, dir string) (string, []string, []string)
 }
 
 // Extensions are native features some runtimes offer beyond the common

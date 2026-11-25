@@ -130,9 +130,13 @@ func Open(ctx context.Context, base domain.CapabilitySet, launchArgs []string, o
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(opts.Executable, Args(launchArgs, opts, id, mcpPath)...)
+	path, args, env := opts.Executable, Args(launchArgs, opts, id, mcpPath), opts.Env
+	if opts.Launcher != nil {
+		path, args, env = opts.Launcher.Main(path, args, env, opts.Workspace)
+	}
+	cmd := exec.Command(path, args...)
 	cmd.Dir = opts.Workspace
-	cmd.Env = opts.Env
+	cmd.Env = env
 	if cmd.Env == nil {
 		cmd.Env = []string{}
 	}

@@ -71,9 +71,13 @@ func Open(ctx context.Context, base domain.CapabilitySet, l Launch, opts domain.
 	s := &Session{opts: opts, sink: sink, stderr: &ring{max: 16 << 10}, waited: make(chan error, 1)}
 	s.touch()
 
-	cmd := exec.Command(opts.Executable, l.Args...)
+	path, args, env := opts.Executable, l.Args, opts.Env
+	if opts.Launcher != nil {
+		path, args, env = opts.Launcher.Main(path, args, env, opts.Workspace)
+	}
+	cmd := exec.Command(path, args...)
 	cmd.Dir = opts.Workspace
-	cmd.Env = opts.Env
+	cmd.Env = env
 	if cmd.Env == nil {
 		cmd.Env = []string{}
 	}
