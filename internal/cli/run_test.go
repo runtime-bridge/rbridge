@@ -13,6 +13,7 @@ import (
 
 	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
 	"github.com/runtime-bridge/rbridge/internal/providers/fakeclaude"
+	"github.com/runtime-bridge/rbridge/internal/skills/lockfile"
 )
 
 func TestMain(m *testing.M) {
@@ -337,5 +338,25 @@ func TestSkillsPermanentDelivery(t *testing.T) {
 	}
 	if _, err := os.Lstat(dest); !os.IsNotExist(err) {
 		t.Fatal("still delivered")
+	}
+}
+
+func TestSkillsImportLock(t *testing.T) {
+	f := newFakeCLI(t)
+	dir := filepath.Join(f.ws, ".agents", "skills", "from-lock")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: from-lock\ndescription: d\n---\n"), 0o644)
+	hash, _ := lockfile.Hash(dir)
+	os.WriteFile(filepath.Join(f.ws, "skills-lock.json"), []byte(`{"version":2,"skills":{"from-lock":{"source":"o/r","sourceType":"github","computedHash":"`+hash+`"}}}`), 0o644)
+	r := f.run("", "skills", "import", "--no-fetch")
+	if r.code != 0 || !strings.Contains(r.stdout, "imported   from-lock from "+dir) {
+		t.Fatalf("import: %+v", r)
+	}
+	if r := f.run("", "skills", "list"); !strings.Contains(r.stdout, "(from skills-lock.json)") {
+		t.Fatalf("list: %+v", r)
+	}
+	os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: from-lock\ndescription: edited\n---\n"), 0o644)
+	if r := f.run("", "skills", "import", "--no-fetch"); r.code == 0 || !strings.Contains(r.stdout, "refused") {
+		t.Fatalf("edited copy: %+v", r)
 	}
 }

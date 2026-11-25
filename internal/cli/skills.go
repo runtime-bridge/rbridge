@@ -39,8 +39,10 @@ func cmdSkills(ctx context.Context, args []string, env Env) error {
 		return skillsUndeliver(ctx, rest, env)
 	case "deliveries":
 		return skillsDeliveries(ctx, rest, env)
+	case "import":
+		return skillsImport(ctx, rest, env)
 	}
-	return domain.Errorf(domain.ErrInvalidInput, "unknown skills command %q (list, add, show, trust, verify, remove, deliver, undeliver, deliveries)", sub)
+	return domain.Errorf(domain.ErrInvalidInput, "unknown skills command %q (list, add, show, trust, verify, remove, deliver, undeliver, deliveries, import)", sub)
 }
 
 func skillsList(ctx context.Context, args []string, env Env) error {
@@ -93,6 +95,10 @@ func sourceText(s domain.SkillSource) string {
 		return out
 	case "link":
 		return "link:" + s.Path
+	case "local":
+		if s.Lock != "" {
+			return s.Path + " (from " + filepath.Base(s.Lock) + ")"
+		}
 	}
 	return s.Path
 }
@@ -497,4 +503,52 @@ func skillsDeliveries(ctx context.Context, args []string, env Env) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", d.SkillID, d.Provider, d.Scope, d.Mode, d.Path)
 	}
 	return tw.Flush()
+}
+
+func skillsImport(ctx context.Context, args []string, env Env) error {
+	fs := newFlags("skills import", env)
+	project := fs.String("project", "", "project holding skills-lock.json (default: current directory)")
+	noFetch := fs.Bool("no-fetch", false, "use only copies installed in the project; do not fetch pinned Git sources")
+	asJSON := fs.Bool("json", false, "print JSON")
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	dir := *project
+	if dir == "" {
+		dir = env.Dir
+	}
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	svc, err := newService(env)
+	if err != nil {
+		return err
+	}
+	res, err := svc.ImportLock(ctx, dir, !*noFetch)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(env.Stdout, res)
+	}
+	refused := 0
+	for _, r := range res {
+		line := fmt.Sprintf("%-10s %s", r.Status, r.Name)
+		if r.From != "" && (r.Status == "imported" || r.Status == "unchanged") {
+			line += " from " + r.From
+		}
+		if r.Reason != "" {
+			line += ": " + r.Reason
+		}
+		fmt.Fprintln(env.Stdout, line)
+		if r.Status == "refused" {
+			refused++
+		}
+	}
+	fmt.Fprintln(env.Stdout, "\nImported skills start unreviewed. Read each one (rbridge skills show <id>) before trusting it.")
+	if refused > 0 {
+		return errSilent{code: domain.ErrSkillDigestMismatch.ExitCode()}
+	}
+	return nil
 }

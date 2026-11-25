@@ -32,6 +32,8 @@ type SkillSource struct {
 	URL      string `json:"url,omitempty"`
 	Revision string `json:"revision,omitempty"`
 	Subdir   string `json:"subdir,omitempty"`
+	// Lock is the skills-lock.json the skill was imported from, if any.
+	Lock string `json:"lock,omitempty"`
 }
 
 // SkillRecord is the registry entry for one installed skill version.

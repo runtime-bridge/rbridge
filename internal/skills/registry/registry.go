@@ -42,6 +42,11 @@ type AddRequest struct {
 	Rev  string // Git revision
 	// Subdir is the skill directory inside the repository.
 	Subdir string
+	// Check, when set, inspects the skill's source folder before anything is
+	// installed; an error stops the add.
+	Check func(dir string) error
+	// Lock records the lock file the skill was imported from.
+	Lock string
 }
 
 // AddResult is the outcome of Add.
@@ -76,7 +81,12 @@ func (r *Registry) addLocal(ctx context.Context, req AddRequest) (AddResult, err
 	if err != nil {
 		return AddResult{}, invalid(err)
 	}
-	source := domain.SkillSource{Type: "local", Path: src}
+	if req.Check != nil {
+		if err := req.Check(src); err != nil {
+			return AddResult{}, err
+		}
+	}
+	source := domain.SkillSource{Type: "local", Path: src, Lock: req.Lock}
 	if req.Link {
 		source.Type = "link"
 		return r.install(ctx, sk, source, "")
@@ -128,7 +138,12 @@ func (r *Registry) addGit(ctx context.Context, req AddRequest) (AddResult, error
 	if err != nil {
 		return AddResult{}, invalid(err)
 	}
-	return r.install(ctx, sk, domain.SkillSource{Type: "git", URL: req.URL, Revision: strings.TrimSpace(commit), Subdir: req.Subdir}, dir)
+	if req.Check != nil {
+		if err := req.Check(dir); err != nil {
+			return AddResult{}, err
+		}
+	}
+	return r.install(ctx, sk, domain.SkillSource{Type: "git", URL: req.URL, Revision: strings.TrimSpace(commit), Subdir: req.Subdir, Lock: req.Lock}, dir)
 }
 
 func (r *Registry) git(ctx context.Context, dir string, args ...string) (string, error) {

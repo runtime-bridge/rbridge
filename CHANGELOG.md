@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- `rbridge skills import` adds the skills listed in a project's `skills-lock.json`, verifying each against the lock's content hash before installing it.
+
 - Per-session skills for Gemini CLI, Codex and custom ACP agents with `skills_dir`: linked into the project's skill folder for the session, excluded from Git, removed afterwards and cleaned up after a crash. A project skill of the same name is never replaced.
 
 - `rbridge skills deliver --permanent [--project DIR]` places a skill in a runtime's own skill folder and tracks it; `skills undeliver` and `skills deliveries` manage them. Trust changes update them, blocking or removing a skill removes them, and project deliveries are added to `.git/info/exclude`.

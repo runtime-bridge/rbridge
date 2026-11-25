@@ -12,6 +12,8 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/config"
 	"github.com/runtime-bridge/rbridge/internal/domain"
 	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
+	"github.com/runtime-bridge/rbridge/internal/skills/lockfile"
+	"github.com/runtime-bridge/rbridge/internal/skills/registry"
 )
 
 func TestPermanentDelivery(t *testing.T) {
@@ -164,5 +166,80 @@ func TestProjectLinkDelivery(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(link, "SKILL.md")); string(b) != "project's own" {
 		t.Fatal("project skill touched")
+	}
+}
+
+func TestImportLock(t *testing.T) {
+	h := newRunHarness(t)
+	h.cfg.Skills.GitRequirePinnedRevision = true
+	svc := h.svc()
+	ctx := context.Background()
+	proj := h.workspace()
+	skillMD := func(name string) string { return "---\nname: " + name + "\ndescription: From a lock.\n---\nbody\n" }
+	put := func(dir, name string) string {
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(skillMD(name)), 0o644)
+		hash, err := lockfile.Hash(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return hash
+	}
+	installed := func(name string) string { return filepath.Join(proj, ".agents", "skills", name) }
+	goodHash := put(installed("good"), "good")
+	put(installed("edited"), "edited")
+	editedHash, _ := lockfile.Hash(installed("edited"))
+	os.WriteFile(filepath.Join(installed("edited"), "SKILL.md"), []byte(skillMD("edited")+"changed\n"), 0o644)
+
+	// A Git repository holding a skill, reached through a file URL.
+	repo := t.TempDir()
+	remoteHash := put(filepath.Join(repo, "skills", "remote"), "remote")
+	git := func(args ...string) string {
+		out, err := registry.RunGit(ctx, repo, append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(out)
+	}
+	git("init", "-q")
+	git("add", ".")
+	git("commit", "-q", "-m", "skills")
+	commit := git("rev-parse", "HEAD")
+
+	lock := `{"version":2,"skills":{
+	 "good":{"source":"org/s","sourceType":"github","computedHash":"` + goodHash + `"},
+	 "edited":{"source":"org/s","sourceType":"github","computedHash":"` + editedHash + `"},
+	 "remote":{"source":"org/s","sourceUrl":"file://` + repo + `","sourceType":"git","commit":"` + commit + `","skillPath":"skills/remote/SKILL.md","computedHash":"` + remoteHash + `"},
+	 "wrong":{"source":"org/s","sourceUrl":"file://` + repo + `","sourceType":"git","commit":"` + commit + `","skillPath":"skills/remote/SKILL.md","computedHash":"` + goodHash + `"},
+	 "unhashed":{"source":"org/s","sourceType":"github","computedHash":""},
+	 "npm":{"source":"pkg","sourceType":"node_modules","computedHash":"x"}}}`
+	os.WriteFile(filepath.Join(proj, "skills-lock.json"), []byte(lock), 0o644)
+
+	status := func(fetch bool) map[string]LockImport {
+		res, err := svc.ImportLock(ctx, proj, fetch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]LockImport{}
+		for _, r := range res {
+			m[r.Name] = r
+		}
+		return m
+	}
+	got := status(false)
+	if got["good"].Status != "imported" || got["edited"].Status != "refused" || got["remote"].Status != "skipped" ||
+		got["unhashed"].Status != "skipped" || got["npm"].Status != "skipped" || got["wrong"].Status != "skipped" {
+		t.Fatalf("without fetch: %+v", got)
+	}
+	got = status(true)
+	if got["good"].Status != "unchanged" || got["remote"].Status != "imported" || got["wrong"].Status != "refused" {
+		t.Fatalf("with fetch: %+v", got)
+	}
+	rec, err := svc.Skills().Require(ctx, "remote")
+	if err != nil || rec.Trust != domain.TrustUnreviewed || rec.Source.Revision != commit || !strings.HasSuffix(rec.Source.Lock, "skills-lock.json") {
+		t.Fatalf("record %+v %v", rec, err)
+	}
+	if _, ok, _ := svc.Skills().Get(ctx, "edited"); ok {
+		t.Fatal("an edited copy must not be imported")
 	}
 }

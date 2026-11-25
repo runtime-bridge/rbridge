@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/skills/lockfile"
 	"github.com/runtime-bridge/rbridge/internal/skills/registry"
 	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 )
@@ -391,4 +392,96 @@ func removeProjectLinks(paths []string) {
 			os.RemoveAll(p)
 		}
 	}
+}
+
+// LockImport is the outcome for one entry of a skills-lock.json.
+type LockImport struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // "imported", "unchanged", "skipped" or "refused"
+	From   string `json:"from,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	Digest string `json:"digest,omitempty"`
+}
+
+// ImportLock adds the skills listed in a project's skills-lock.json to the
+// library. An installed copy under .agents/skills is used when its files
+// match the lock's hash; otherwise a Git source pinned to a commit is
+// fetched when fetch is true and checked against the same hash. Entries
+// that cannot be verified are skipped. Imported skills start unreviewed.
+func (s *Service) ImportLock(ctx context.Context, project string, fetch bool) ([]LockImport, error) {
+	path := filepath.Join(project, lockfile.Name)
+	l, err := lockfile.Read(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, domain.Errorf(domain.ErrInvalidInput, "no %s in %s", lockfile.Name, project)
+		}
+		return nil, domain.Errorf(domain.ErrInvalidInput, "%s: %v", path, err)
+	}
+	names := make([]string, 0, len(l.Skills))
+	for n := range l.Skills {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	reg := s.Skills()
+	var out []LockImport
+	for _, name := range names {
+		e := l.Skills[name]
+		res := LockImport{Name: name}
+		if e.ComputedHash == "" {
+			res.Status, res.Reason = "skipped", "the lock has no content hash for it (a version 1 lock); add it yourself after reviewing it"
+			out = append(out, res)
+			continue
+		}
+		check := func(dir string) error {
+			got, err := lockfile.Hash(dir)
+			if err != nil {
+				return err
+			}
+			if got != e.ComputedHash {
+				return domain.Errorf(domain.ErrSkillDigestMismatch, "files do not match the lock's hash")
+			}
+			return nil
+		}
+		var req registry.AddRequest
+		installed := filepath.Join(project, ".agents", "skills", name)
+		url, subdir, pinned := e.GitURL()
+		switch {
+		case dirExists(installed):
+			req = registry.AddRequest{Path: installed, Check: check, Lock: path}
+			res.From = installed
+		case pinned && fetch:
+			req = registry.AddRequest{URL: url, Rev: e.Commit, Subdir: subdir, Check: check, Lock: path}
+			res.From = url + "@" + e.Commit
+			if subdir != "" {
+				res.From += " " + subdir
+			}
+		case pinned:
+			res.Status, res.Reason = "skipped", "not installed in the project, and fetching is off"
+			out = append(out, res)
+			continue
+		default:
+			res.Status, res.Reason = "skipped", "not installed in the project, and its "+e.SourceType+" source is not pinned to a Git commit"
+			out = append(out, res)
+			continue
+		}
+		added, err := reg.Add(ctx, req)
+		switch {
+		case err != nil:
+			res.Status, res.Reason = "refused", err.Error()
+		case added.Unchanged:
+			res.Status, res.Digest = "unchanged", added.Record.Digest
+		default:
+			res.Status, res.Digest = "imported", added.Record.Digest
+			if added.Record.ID != name {
+				res.Reason = "installed as " + added.Record.ID + ", the name in its SKILL.md"
+			}
+		}
+		out = append(out, res)
+	}
+	return out, nil
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
