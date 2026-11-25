@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/runtime-bridge/rbridge/main/scripts
 
 The script verifies the release checksum (and the cosign signature when cosign is installed) before installing to `~/.local/bin`. With Go 1.25 or later: `go install github.com/runtime-bridge/rbridge/cmd/rbridge@latest`.
 
-New here? Follow [docs/getting-started.md](docs/getting-started.md). Reference: [configuration](docs/configuration.md), [threat model](docs/threat-model.md), [performance](docs/performance.md), [releasing](docs/releasing.md).
+The full documentation, with examples for the CLI and every SDK, is at **[runtime-bridge.github.io](https://runtime-bridge.github.io/docs/)**. New here? Follow [docs/getting-started.md](docs/getting-started.md). Reference: [configuration](docs/configuration.md), [threat model](docs/threat-model.md), [performance](docs/performance.md), [releasing](docs/releasing.md).
 
 Or from a checkout:
 
