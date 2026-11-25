@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect } from "@rbridge/sdk";
+import { Rbridge } from "@rbridge/sdk";
 import { approve, check, verdict } from "./check.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -56,20 +56,20 @@ test("approval rules", () => {
 
 test("verdict reads structured or embedded JSON", () => {
   const v = { status: "degraded", checks: [{ name: "api", status: "down" }] };
-  assert.deepEqual(verdict({ structured: v }), v);
-  assert.deepEqual(verdict({ output: "Result:\n" + JSON.stringify(v) }), v);
-  assert.equal(verdict({ output: "no json" }), undefined);
+  assert.deepEqual(verdict(v), v);
+  assert.deepEqual(verdict(null, "Result:\n" + JSON.stringify(v)), v);
+  assert.equal(verdict(null, "no json"), undefined);
 });
 
 test("runs through the daemon with the skill delivered", async () => {
   const d = await daemon("echo");
   try {
-    const rb = await connect({ client: "ops-check", env: d.env });
-    const res = await check({ dir: d.project, client: rb });
-    assert.match(res.output, /Check the health of the services/);
-    assert.equal(res.skills[0].skill_id, "ops-diagnostics");
-    assert.equal((await rb.skills()).find((s) => s.id === "ops-diagnostics").trust, "reviewed");
-    rb.close();
+    const rb = new Rbridge({ app: "ops-check", env: d.env });
+    const res = await check({ dir: d.project, rb });
+    assert.match(res.text, /Check the health of the services/);
+    assert.equal(res.raw.skills[0].skill_id, "ops-diagnostics");
+    assert.equal((await (await rb.client()).skills()).find((s) => s.id === "ops-diagnostics").trust, "reviewed");
+    await rb.close();
   } finally {
     await d.stop();
   }
@@ -78,12 +78,12 @@ test("runs through the daemon with the skill delivered", async () => {
 test("commands outside the rules are refused", async () => {
   const d = await daemon("terminal");
   try {
-    const rb = await connect({ client: "ops-check", env: d.env });
+    const rb = new Rbridge({ app: "ops-check", env: d.env });
     const decisions = [];
-    const res = await check({ dir: d.project, client: rb, log: (m) => decisions.push(m) });
-    assert.match(res.output, /terminal refused/);
+    const res = await check({ dir: d.project, rb, log: (m) => decisions.push(m) });
+    assert.match(res.text, /terminal refused/);
     assert.ok(decisions.some((m) => m.startsWith("denied")), decisions.join("\n"));
-    rb.close();
+    await rb.close();
   } finally {
     await d.stop();
   }

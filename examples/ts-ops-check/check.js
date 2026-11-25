@@ -3,12 +3,12 @@
 // The program ships an ops-diagnostics skill with a health script and hands the
 // check to whichever runtime rbridge picks. Commands need approval: this
 // program allows the skill's script and a few read-only commands, and denies
-// the rest. Start the daemon first: rbridge daemon start.
+// the rest. The SDK starts the rbridge daemon when it is not running.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { connect } from "@rbridge/sdk";
+import { Rbridge } from "@rbridge/sdk";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,10 +59,9 @@ export function approve(request, log = () => {}) {
 }
 
 /** Structured output when the runtime supports it, otherwise JSON in the text. */
-export function verdict(result) {
-  let data = result.structured;
+export function verdict(data, text = "") {
   if (!data) {
-    const m = /\{[\s\S]*\}/.exec(result.output ?? "");
+    const m = /\{[\s\S]*\}/.exec(text);
     try {
       data = m ? JSON.parse(m[0]) : undefined;
     } catch {
@@ -72,42 +71,41 @@ export function verdict(result) {
   return data && typeof data.status === "string" && Array.isArray(data.checks) ? data : undefined;
 }
 
-export async function check({ dir, provider, model, sandbox, client, log = () => {} }) {
-  const own = !client;
-  const rb = client ?? (await connect({ client: "ops-check" }));
+export async function check({ dir, runtime, model, sandbox, rb, log = () => {} }) {
+  const own = !rb;
+  rb ??= new Rbridge({ app: "ops-check" });
   try {
-    await rb.addSkill(path.join(here, "skills", "ops-diagnostics"));
-    // Reviewed: the script is delivered, and every command still needs approval.
-    await rb.setSkillTrust("ops-diagnostics", "reviewed");
-    const task = {
+    return await rb.run("Check the health of the services in services.json and of this machine.", {
       workspace: path.resolve(dir),
-      prompt: "Check the health of the services in services.json and of this machine.",
-      skills: ["ops-diagnostics"],
+      runtime,
+      model,
+      sandbox,
+      // Shipped with the program, so added and trusted as reviewed on first use:
+      // its script is delivered, and every command still needs approval.
+      skills: [path.join(here, "skills", "ops-diagnostics")],
       profile: "controlled",
-      output_schema: schema,
-    };
-    if (provider) task.provider = provider;
-    if (sandbox) task.sandbox = sandbox;
-    return await rb.run(task, { model, approver: (req) => approve(req, log) });
+      schema,
+      approve: (req) => approve(req, log),
+    });
   } finally {
-    if (own) rb.close();
+    if (own) await rb.close();
   }
 }
 
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { provider: { type: "string" }, model: { type: "string" }, sandbox: { type: "string" }, quiet: { type: "boolean" } },
+    options: { runtime: { type: "string" }, model: { type: "string" }, sandbox: { type: "string" }, quiet: { type: "boolean" } },
   });
   const dir = positionals[0] ?? path.join(here, "sample");
   const log = values.quiet ? () => {} : (m) => console.error(`[approval] ${m}`);
   const result = await check({ dir, ...values, log });
-  const v = verdict(result);
+  const v = verdict(result.data, result.text);
   if (!v) {
-    console.log(result.output);
+    console.log(result.text);
     return 0;
   }
-  console.log(`status: ${v.status}  (checked by ${result.provider})`);
+  console.log(`status: ${v.status}  (checked by ${result.runtime})`);
   for (const c of v.checks) console.log(`  ${c.status.padEnd(8)} ${c.name}${c.detail ? ": " + c.detail : ""}`);
   for (const a of v.actions ?? []) console.log(`  next: ${a}`);
   return v.status === "down" ? 1 : 0;
