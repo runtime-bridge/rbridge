@@ -98,7 +98,7 @@ rbridge daemon start
 ```
 
 ```js
-import { connect } from "@rbridge/sdk";
+import { connect } from "@runtime-bridge/sdk";
 const rb = await connect({ client: "demo" });
 console.log((await rb.run({ workspace: process.cwd(), prompt: "Explain util.py", profile: "observe" })).output);
 rb.close();
