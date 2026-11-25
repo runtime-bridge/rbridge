@@ -166,8 +166,14 @@ type ExecutionConfig struct {
 	DetectTimeout         time.Duration `yaml:"detect_timeout"`
 	IdleTimeout           time.Duration `yaml:"idle_timeout"`
 	// SlotWait is how long a new session waits for a free slot before failing.
-	SlotWait       time.Duration `yaml:"slot_wait"`
-	DetectCacheTTL time.Duration `yaml:"detect_cache_ttl"`
+	SlotWait time.Duration `yaml:"slot_wait"`
+	// ResourceCeilingPercent caps how busy sessions may make the machine:
+	// concurrency ramps down from 75% of it to one session at it. 0 is off.
+	ResourceCeilingPercent float64 `yaml:"resource_ceiling_percent"`
+	// MemoryHeadroomMB is the free memory below which memory use counts
+	// towards the ceiling.
+	MemoryHeadroomMB float64       `yaml:"memory_headroom_mb"`
+	DetectCacheTTL   time.Duration `yaml:"detect_cache_ttl"`
 }
 
 type AuditConfig struct {
@@ -229,6 +235,7 @@ func Defaults() Config {
 			DetectTimeout:         5 * time.Second,
 			IdleTimeout:           5 * time.Minute,
 			SlotWait:              30 * time.Second,
+			MemoryHeadroomMB:      2048,
 			DetectCacheTTL:        10 * time.Minute,
 		},
 		Audit: AuditConfig{Enabled: true, Level: "metadata", Retention: 30 * 24 * time.Hour},
@@ -532,6 +539,12 @@ func (c Config) Validate() error {
 		if !filepath.IsAbs(w) && !strings.HasPrefix(w, "~/") {
 			return fmt.Errorf("sandbox.writable[%d]: use an absolute path or one starting with ~/", i)
 		}
+	}
+	if r := c.Execution.ResourceCeilingPercent; r < 0 || r > 100 || (r > 0 && r < 10) {
+		return errors.New("execution.resource_ceiling_percent must be 0 (off) or between 10 and 100")
+	}
+	if c.Execution.MemoryHeadroomMB < 0 {
+		return errors.New("execution.memory_headroom_mb must not be negative")
 	}
 	if c.Resolution.Fallback != "denied" && c.Resolution.Fallback != "allowed" {
 		return errors.New("resolution.fallback must be denied or allowed")

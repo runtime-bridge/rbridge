@@ -16,6 +16,7 @@ import (
 
 	"github.com/runtime-bridge/rbridge/internal/config"
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/governor"
 	"github.com/runtime-bridge/rbridge/internal/process"
 	"github.com/runtime-bridge/rbridge/internal/providers/detect"
 	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
@@ -490,4 +491,34 @@ func TestAuthModeRemembered(t *testing.T) {
 	if p, _ := svc.Provider(ctx, "claude-code", true); p.Runtime.AuthMode != domain.AuthSubscription {
 		t.Fatalf("after a session: %s", p.Runtime.AuthMode)
 	}
+}
+
+func TestGovernorHoldsBackSessionsOnABusyMachine(t *testing.T) {
+	h := newRunHarness(t)
+	h.cfg.Execution.MaxConcurrentSessions = 3
+	h.cfg.Execution.ResourceCeilingPercent = 80
+	h.cfg.Execution.SlotWait = 300 * time.Millisecond
+	svc := h.svc()
+	busy := governor.Load{Known: true, CPUPercent: 97, MemoryPercent: 40, AvailableMB: 9000}
+	svc.Governor().Sample = func() governor.Load { return busy }
+	ctx := context.Background()
+	task := domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "opencode"}
+
+	// A lone session always starts, however busy the machine is.
+	first, err := svc.OpenSession(ctx, task, RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.OpenSession(ctx, task, RunOptions{})
+	if domain.CodeOf(err) != domain.ErrProviderUnavailable || !strings.Contains(err.Error(), "machine is busy") {
+		t.Fatalf("a second session on a busy machine: %v", err)
+	}
+	// When the load falls, the configured slots open up again.
+	busy.CPUPercent = 20
+	second, err := svc.OpenSession(ctx, task, RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.Close(ctx)
+	first.Close(ctx)
 }

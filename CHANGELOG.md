@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Resource governor: with `execution.resource_ceiling_percent` set, the number of sessions allowed at once follows the machine's CPU and memory load, from every configured slot down to one at the ceiling, never zero. `rbridge doctor` shows the current reading.
+
 - Claude Code's Skill tool counts as a read, so read-only profiles such as `observe` can load the skills rbridge delivers. Scripts a skill runs are still judged as commands.
 
 - Examples: `go-release-notes` (embedded Go library), `python-security-review` (Python SDK) and `ts-ops-check` (Node.js SDK), each with its own skill and a smoke test in CI. The SDKs gain calls to add, trust and search skills.

@@ -805,17 +805,32 @@ func (s *Service) acquire(ctx context.Context) (func(), error) {
 	if wait <= 0 {
 		wait = 30 * time.Second
 	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	select {
-	case s.slots <- struct{}{}:
-		var once sync.Once
-		return func() { once.Do(func() { <-s.slots }) }, nil
-	case <-ctx.Done():
-		return nil, domain.Errorf(domain.ErrCancelled, "waiting for a free session slot: %v", ctx.Err())
-	case <-timer.C:
-		return nil, &domain.Error{Code: domain.ErrProviderUnavailable, Retryable: true,
-			Message: fmt.Sprintf("all %d session slots are busy (execution.max_concurrent_sessions); try again later", cap(s.slots))}
+	deadline := time.Now().Add(wait)
+	for {
+		// The governor lowers the number of sessions allowed while the machine
+		// is busy; it never lowers it to zero, so a lone session always starts.
+		permitted, load := s.gov.Permitted(cap(s.slots))
+		if len(s.slots) < permitted {
+			select {
+			case s.slots <- struct{}{}:
+				var once sync.Once
+				return func() { once.Do(func() { <-s.slots }) }, nil
+			default:
+			}
+		}
+		if !time.Now().Before(deadline) {
+			msg := fmt.Sprintf("all %d session slots are busy (execution.max_concurrent_sessions); try again later", cap(s.slots))
+			if permitted < cap(s.slots) {
+				msg = fmt.Sprintf("the machine is busy (%.0f%% against a %.0f%% ceiling), so only %d of %d sessions may run; try again later",
+					s.gov.Peak(load), s.gov.CeilingPercent, permitted, cap(s.slots))
+			}
+			return nil, &domain.Error{Code: domain.ErrProviderUnavailable, Retryable: true, Message: msg}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, domain.Errorf(domain.ErrCancelled, "waiting for a free session slot: %v", ctx.Err())
+		case <-time.After(min(200*time.Millisecond, time.Until(deadline)+time.Millisecond)):
+		}
 	}
 }
 

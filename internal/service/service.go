@@ -15,6 +15,7 @@ import (
 
 	"github.com/runtime-bridge/rbridge/internal/config"
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/governor"
 	"github.com/runtime-bridge/rbridge/internal/process"
 	"github.com/runtime-bridge/rbridge/internal/providers/accounts"
 	"github.com/runtime-bridge/rbridge/internal/providers/detect"
@@ -41,7 +42,11 @@ type Service struct {
 	redact    *redact.Redactor
 	catalogs  catalog.Client
 	sandboxes sandboxEngines
+	gov       *governor.Governor
 }
+
+// Governor reports the resource governor, for status displays.
+func (s *Service) Governor() *governor.Governor { return s.gov }
 
 // Redactor masks secrets in text rbridge stores or logs.
 func (s *Service) Redactor() *redact.Redactor { return s.redact }
@@ -125,6 +130,7 @@ func New(o Options) (*Service, error) {
 		paths: o.Paths, cfg: o.Config, layers: o.Layers, registry: reg,
 		detector: o.Detector, store: o.Store, getenv: o.Getenv, environ: o.Environ, now: o.Now,
 		slots:  make(chan struct{}, max(1, o.Config.Execution.MaxConcurrentSessions)),
+		gov:    governor.New(o.Config.Execution.ResourceCeilingPercent, o.Config.Execution.MemoryHeadroomMB),
 		redact: redact.New().FromEnviron(o.Environ()),
 	}, nil
 }
