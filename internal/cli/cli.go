@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"text/tabwriter"
@@ -17,6 +18,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/config"
 	"github.com/runtime-bridge/rbridge/internal/domain"
 	"github.com/runtime-bridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/internal/suggest"
 )
 
 // Env is the process environment the CLI runs in. Tests supply their own.
@@ -90,6 +92,7 @@ func Run(ctx context.Context, args []string, env Env) int {
 	if env.Stdin == nil {
 		env.Stdin = strings.NewReader("")
 	}
+	env = absoluteHome(env)
 	if len(args) == 0 {
 		fmt.Fprint(env.Stderr, usage)
 		return 2
@@ -126,7 +129,7 @@ func Run(ctx context.Context, args []string, env Env) int {
 	case "uninstall":
 		err = cmdUninstall(ctx, args[1:], env)
 	default:
-		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q; run rbridge help", args[0])
+		err = domain.Errorf(domain.ErrInvalidInput, "unknown command %q%s (rbridge help lists them)", args[0], suggest.DidYouMean(args[0], topCommands))
 	}
 	return report(err, env)
 }
@@ -191,6 +194,36 @@ func newServiceFor(env Env, workspace string) (*service.Service, error) {
 	})
 }
 
+// absoluteHome makes a relative RBRIDGE_HOME (such as .rbridge) absolute
+// from the current folder, for this process and every one it starts, so the
+// daemon, started from another folder, finds the same home.
+func absoluteHome(env Env) Env {
+	h := env.Getenv("RBRIDGE_HOME")
+	if h == "" || filepath.IsAbs(h) || env.Dir == "" {
+		return env
+	}
+	abs := filepath.Join(env.Dir, h)
+	getenv, environ := env.Getenv, env.Environ
+	env.Getenv = func(k string) string {
+		if k == "RBRIDGE_HOME" {
+			return abs
+		}
+		return getenv(k)
+	}
+	env.Environ = func() []string {
+		var out []string
+		if environ != nil {
+			for _, kv := range environ() {
+				if !strings.HasPrefix(kv, "RBRIDGE_HOME=") {
+					out = append(out, kv)
+				}
+			}
+		}
+		return append(out, "RBRIDGE_HOME="+abs)
+	}
+	return env
+}
+
 func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -223,6 +256,14 @@ func cmdVersion(args []string, env Env) error {
 }
 
 func cmdProviders(ctx context.Context, args []string, env Env) error {
+	if len(args) > 0 {
+		args[0] = subcommand(args[0], []string{"list", "show", "accept"})
+		if args[0] == "list" {
+			args = args[1:]
+		} else if !strings.HasPrefix(args[0], "-") && args[0] != "show" && args[0] != "accept" {
+			return unknownSub("providers", args[0], []string{"list", "show", "accept"})
+		}
+	}
 	if len(args) > 0 && args[0] == "show" {
 		return cmdProvidersShow(ctx, args[1:], env)
 	}

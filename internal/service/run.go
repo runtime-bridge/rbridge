@@ -186,7 +186,7 @@ func (s *Service) resolve(ctx context.Context, t domain.Task) (registry.Manifest
 		}
 		m, ok := s.registry.Get(t.Provider)
 		if !ok {
-			return m, ProviderStatus{}, domain.Errorf(domain.ErrProviderNotFound, "no provider %q", t.Provider)
+			return m, ProviderStatus{}, s.noProvider(t.Provider)
 		}
 		st, why := s.usable(ctx, t, m)
 		if err := ctx.Err(); err != nil {

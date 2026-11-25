@@ -25,6 +25,7 @@ import (
 	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
 	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 	"github.com/runtime-bridge/rbridge/internal/store"
+	"github.com/runtime-bridge/rbridge/internal/suggest"
 )
 
 // Service is the entry point for every interface.
@@ -220,11 +221,21 @@ func (s *Service) Providers(ctx context.Context, refresh bool) ([]ProviderStatus
 	return out, nil
 }
 
+// noProvider is the error for an unknown provider id: the closest id, if
+// any, and the ids there are.
+func (s *Service) noProvider(id string) error {
+	var ids []string
+	for _, m := range s.registry.All() {
+		ids = append(ids, m.ID)
+	}
+	return domain.Errorf(domain.ErrProviderNotFound, "no provider %q%s (providers: %s; rbridge providers shows which are installed)", id, suggest.DidYouMean(id, ids), strings.Join(ids, ", "))
+}
+
 // Provider detects one provider.
 func (s *Service) Provider(ctx context.Context, id string, refresh bool) (ProviderStatus, error) {
 	m, ok := s.registry.Get(id)
 	if !ok {
-		return ProviderStatus{}, domain.Errorf(domain.ErrProviderNotFound, "no provider %q", id)
+		return ProviderStatus{}, s.noProvider(id)
 	}
 	return s.status(ctx, m, refresh)
 }
@@ -233,7 +244,7 @@ func (s *Service) Provider(ctx context.Context, id string, refresh bool) (Provid
 func (s *Service) Lookup(id string) (domain.Provider, error) {
 	m, ok := s.registry.Get(id)
 	if !ok {
-		return nil, domain.Errorf(domain.ErrProviderNotFound, "no provider %q", id)
+		return nil, s.noProvider(id)
 	}
 	return &provider{svc: s, m: m}, nil
 }
@@ -420,7 +431,7 @@ func (s *Service) checkExecutable(ctx context.Context, id string, info *domain.R
 func (s *Service) AcceptExecutable(ctx context.Context, id string) (domain.RuntimeInfo, error) {
 	m, ok := s.registry.Get(id)
 	if !ok {
-		return domain.RuntimeInfo{}, domain.Errorf(domain.ErrProviderNotFound, "no provider %q", id)
+		return domain.RuntimeInfo{}, s.noProvider(id)
 	}
 	info := s.detector.Detect(ctx, m, s.cfg.Providers.Settings[id])
 	cur, ok := s.currentExecutable(info)

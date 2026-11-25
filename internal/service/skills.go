@@ -42,7 +42,7 @@ type PermanentDelivery struct {
 func (s *Service) DeliverPermanent(ctx context.Context, id, provider, project string) (PermanentDelivery, error) {
 	m, ok := s.registry.Get(provider)
 	if !ok {
-		return PermanentDelivery{}, domain.Errorf(domain.ErrProviderNotFound, "no provider %q", provider)
+		return PermanentDelivery{}, s.noProvider(provider)
 	}
 	reg := s.Skills()
 	rec, err := reg.Require(ctx, id)

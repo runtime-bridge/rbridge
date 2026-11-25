@@ -20,7 +20,8 @@ func cmdSkills(ctx context.Context, args []string, env Env) error {
 	if len(args) == 0 {
 		args = []string{"list"}
 	}
-	sub, rest := args[0], args[1:]
+	skillCommands := []string{"list", "add", "show", "trust", "verify", "remove", "deliver", "undeliver", "deliveries", "import", "search", "digest"}
+	sub, rest := subcommand(args[0], skillCommands), args[1:]
 	switch sub {
 	case "list":
 		return skillsList(ctx, rest, env)
@@ -47,7 +48,7 @@ func cmdSkills(ctx context.Context, args []string, env Env) error {
 	case "digest":
 		return skillsDigest(rest, env)
 	}
-	return domain.Errorf(domain.ErrInvalidInput, "unknown skills command %q (list, add, show, trust, verify, remove, deliver, undeliver, deliveries, import, search, digest)", sub)
+	return unknownSub("skills", sub, skillCommands)
 }
 
 func skillsList(ctx context.Context, args []string, env Env) error {

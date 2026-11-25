@@ -19,7 +19,8 @@ func cmdSessions(ctx context.Context, args []string, env Env) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		sub, args = args[0], args[1:]
 	}
-	switch sub {
+	sessionCommands := []string{"list", "show", "resume", "cancel", "prune"}
+	switch sub = subcommand(sub, sessionCommands); sub {
 	case "list":
 		return sessionsList(ctx, args, env)
 	case "show":
@@ -31,7 +32,7 @@ func cmdSessions(ctx context.Context, args []string, env Env) error {
 	case "prune":
 		return sessionsPrune(ctx, args, env)
 	}
-	return domain.Errorf(domain.ErrInvalidInput, "unknown sessions command %q (list, show, resume, cancel, prune)", sub)
+	return unknownSub("sessions", sub, sessionCommands)
 }
 
 func sessionsList(ctx context.Context, args []string, env Env) error {

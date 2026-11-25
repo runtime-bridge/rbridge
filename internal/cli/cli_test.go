@@ -99,7 +99,7 @@ func TestErrorsAndExitCodes(t *testing.T) {
 	}{
 		{[]string{"providers", "show", "nope"}, 10, "provider_not_found"},
 		{[]string{"providers", "show"}, 2, "usage"},
-		{[]string{"providers", "extra"}, 2, "unexpected argument"},
+		{[]string{"providers", "extra"}, 2, "unknown providers command"},
 		{[]string{"bogus"}, 2, "unknown command"},
 		{[]string{"providers", "--nope"}, 2, "flag provided but not defined"},
 		{nil, 2, "Usage"},
