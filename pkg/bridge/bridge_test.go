@@ -125,3 +125,24 @@ func TestSessionsAndSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAddSkills(t *testing.T) {
+	opts, _ := setup(t)
+	ctx := context.Background()
+	b, err := bridge.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for _, name := range []string{"doc-writer", "draft-notes"} {
+		os.MkdirAll(filepath.Join(root, name), 0o755)
+		os.WriteFile(filepath.Join(root, name, "SKILL.md"), []byte("---\nname: "+name+"\ndescription: A skill.\n---\n"), 0o644)
+	}
+	res, err := b.AddSkills(ctx, []string{root}, bridge.AddSkillsOptions{Exclude: []string{"draft-*"}, Trust: bridge.TrustReviewed})
+	if err != nil || res.Failed() != 0 || len(res.Items) != 2 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if res.Items[0].Status != "added" || res.Items[0].Result.Record.Trust != bridge.TrustReviewed || res.Items[1].Status != "skipped" {
+		t.Fatalf("%+v", res.Items)
+	}
+}

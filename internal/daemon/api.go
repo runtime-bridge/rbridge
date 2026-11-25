@@ -175,6 +175,45 @@ func (a *API) Methods() map[string]Method {
 			}
 			return a.Svc.Skills().Add(ctx, skillreg.AddRequest{Path: in.Path, Link: in.Link, URL: in.URL, Rev: in.Rev, Subdir: in.Subdir})
 		},
+		"skills.add_many": func(ctx context.Context, _ string, p json.RawMessage) (any, error) {
+			var in struct {
+				Paths   []string `json:"paths"`
+				Link    bool     `json:"link"`
+				URL     string   `json:"url"`
+				Rev     string   `json:"rev"`
+				Subdirs []string `json:"subdirs"`
+				Only    []string `json:"only"`
+				Exclude []string `json:"exclude"`
+				DryRun  bool     `json:"dry_run"`
+				Trust   string   `json:"trust"`
+			}
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			for _, path := range in.Paths {
+				if !filepath.IsAbs(path) {
+					return nil, domain.Errorf(domain.ErrInvalidInput, "paths must be absolute")
+				}
+			}
+			req := skillreg.AddManyRequest{Paths: in.Paths, Link: in.Link, URL: in.URL, Rev: in.Rev, Subdirs: in.Subdirs, Only: in.Only, Exclude: in.Exclude, DryRun: in.DryRun}
+			if in.Trust != "" {
+				state, err := skillreg.ParseTrust(in.Trust)
+				if err != nil {
+					return nil, err
+				}
+				req.SetTrust = func(ctx context.Context, id string) (domain.SkillRecord, error) {
+					return a.Svc.SetSkillTrust(ctx, id, state)
+				}
+			}
+			res, err := a.Svc.Skills().AddMany(ctx, req)
+			if err != nil {
+				return nil, err
+			}
+			if res.Items == nil {
+				res.Items = []skillreg.AddManyItem{}
+			}
+			return res, nil
+		},
 		"skills.search": func(ctx context.Context, _ string, p json.RawMessage) (any, error) {
 			var in struct {
 				Query string `json:"query"`

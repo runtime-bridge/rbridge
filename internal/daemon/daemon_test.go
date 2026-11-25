@@ -516,3 +516,39 @@ func TestInputOverDaemon(t *testing.T) {
 		t.Fatalf("without a handler: %+v %v", res, err)
 	}
 }
+
+func TestAddManySkillsOverHTTP(t *testing.T) {
+	e := start(t, nil)
+	root := t.TempDir()
+	for _, name := range []string{"evidence-rules", "metric-discovery", "metric-verification"} {
+		dir := filepath.Join(root, name)
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+name+"\ndescription: A test skill.\n---\nSteps.\n"), 0o644)
+	}
+	resp, b := e.req("POST", "/v1/skills/batch", "", map[string]any{"paths": []string{root}, "exclude": []string{"metric-verification"}, "trust": "reviewed"}, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, b)
+	}
+	var out struct {
+		Items []struct {
+			ID, Status string
+			Result     *struct {
+				Record struct{ Trust string }
+			}
+		}
+	}
+	json.Unmarshal(b, &out)
+	got := map[string]string{}
+	for _, it := range out.Items {
+		got[it.ID] = it.Status
+		if it.Status == "added" && it.Result.Record.Trust != "reviewed" {
+			t.Errorf("%s added with trust %s", it.ID, it.Result.Record.Trust)
+		}
+	}
+	if got["evidence-rules"] != "added" || got["metric-discovery"] != "added" || got["metric-verification"] != "skipped" {
+		t.Fatalf("%s", b)
+	}
+	if resp, _ := e.req("POST", "/v1/skills/batch", "", map[string]any{"paths": []string{"relative/dir"}}, nil); resp.StatusCode != 400 {
+		t.Fatalf("relative path accepted: %d", resp.StatusCode)
+	}
+}

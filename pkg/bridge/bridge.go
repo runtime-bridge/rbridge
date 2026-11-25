@@ -40,14 +40,17 @@ type (
 	StopReason       = domain.StopReason
 	SessionRecord    = domain.SessionRecord
 	SkillRecord      = domain.SkillRecord
-	TrustState       = domain.TrustState
-	Error            = domain.Error
-	ErrorCode        = domain.ErrorCode
-	ProviderStatus   = service.ProviderStatus
-	Mode             = domain.Mode
-	ConfigOption     = domain.ConfigOption
-	InputRequest     = domain.InputRequest
-	InputResponse    = domain.InputResponse
+	// AddSkillsResult reports, per skill folder found, whether it was added,
+	// updated, unchanged, skipped or failed.
+	AddSkillsResult = skillreg.AddManyResult
+	TrustState      = domain.TrustState
+	Error           = domain.Error
+	ErrorCode       = domain.ErrorCode
+	ProviderStatus  = service.ProviderStatus
+	Mode            = domain.Mode
+	ConfigOption    = domain.ConfigOption
+	InputRequest    = domain.InputRequest
+	InputResponse   = domain.InputResponse
 
 	TextData           = domain.TextData
 	ToolData           = domain.ToolData
@@ -351,6 +354,43 @@ func (b *Bridge) Sessions(ctx context.Context) ([]SessionRecord, error) { return
 func (b *Bridge) AddSkill(ctx context.Context, dir string, link bool) (SkillRecord, error) {
 	res, err := b.svc.Skills().Add(ctx, skillreg.AddRequest{Path: dir, Link: link})
 	return res.Record, err
+}
+
+// AddSkillsOptions chooses among the skills AddSkills finds.
+type AddSkillsOptions struct {
+	// Only keeps the skills whose names match one of these, and Exclude
+	// leaves out the ones that match; both take names or patterns such as
+	// "metric-*".
+	Only    []string
+	Exclude []string
+	// Trust, when set, is applied to every skill added.
+	Trust TrustState
+	// DryRun finds and checks the skills without installing any.
+	DryRun bool
+	Link   bool
+}
+
+// AddSkills installs every skill found in the given folders, each of which
+// may be a skill or a folder holding skills. One skill failing does not stop
+// the others; the result has an item for each.
+func (b *Bridge) AddSkills(ctx context.Context, dirs []string, opts AddSkillsOptions) (AddSkillsResult, error) {
+	return b.addSkills(ctx, skillreg.AddManyRequest{Paths: dirs}, opts)
+}
+
+// AddSkillsFromGit installs every skill found in a repository at a pinned
+// commit, under subdirs or, with none, anywhere in the repository.
+func (b *Bridge) AddSkillsFromGit(ctx context.Context, url, commit string, subdirs []string, opts AddSkillsOptions) (AddSkillsResult, error) {
+	return b.addSkills(ctx, skillreg.AddManyRequest{URL: url, Rev: commit, Subdirs: subdirs}, opts)
+}
+
+func (b *Bridge) addSkills(ctx context.Context, req skillreg.AddManyRequest, opts AddSkillsOptions) (AddSkillsResult, error) {
+	req.Only, req.Exclude, req.DryRun, req.Link = opts.Only, opts.Exclude, opts.DryRun, opts.Link
+	if opts.Trust != "" {
+		req.SetTrust = func(ctx context.Context, id string) (SkillRecord, error) {
+			return b.svc.SetSkillTrust(ctx, id, opts.Trust)
+		}
+	}
+	return b.svc.Skills().AddMany(ctx, req)
 }
 
 // AddSkillFromGit installs a skill from a Git repository at a pinned commit.

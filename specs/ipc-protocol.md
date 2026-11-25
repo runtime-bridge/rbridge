@@ -28,6 +28,7 @@ Parameters and results are the same JSON objects as the HTTP API (`specs/http-ap
 | `skills.list` | none | skill records |
 | `skills.get` | `id` | skill record |
 | `skills.add` | `path` (absolute) or `url` + `rev` (+ `subdir`), `link`, or `catalog` (`catalog:id` or `id`) | add result |
+| `skills.add_many` | `paths` (absolute folders, each a skill or a folder of skills) or `url` + `rev` (+ `subdirs`, none meaning the whole repository); `only`, `exclude` (names or `*` patterns), `link`, `dry_run`, `trust` | `{"items":[{"id","source","status","result","reason"}],"warnings":[...]}`; `status` is `added`, `updated`, `unchanged`, `would_add`, `skipped` or `failed`, and one failed skill does not stop the rest |
 | `skills.search` | `query` | `{"skills":[...],"problems":[...]}` from the configured catalogs |
 | `skills.trust` | `id`, `trust` | skill record |
 | `skills.remove` | `id` | `{"removed":true}` |
