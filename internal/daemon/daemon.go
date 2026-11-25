@@ -20,6 +20,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/buildinfo"
 	"github.com/runtime-bridge/rbridge/internal/config"
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/redact"
 	"github.com/runtime-bridge/rbridge/internal/service"
 )
 
@@ -98,6 +99,11 @@ func Run(ctx context.Context, o Options) error {
 	if log == nil {
 		log = slog.Default()
 	}
+	var r *redact.Redactor
+	if o.Service != nil {
+		r = o.Service.Redactor()
+	}
+	log = slog.New(redactHandler{inner: log.Handler(), r: r})
 	f := o.Files
 	if err := os.MkdirAll(f.Dir, 0o700); err != nil {
 		return err
@@ -119,6 +125,7 @@ func Run(ctx context.Context, o Options) error {
 	_ = os.Remove(f.Socket)
 
 	hub := NewHub(o.Service, o.Config.Daemon.EventBuffer, o.Config.Daemon.SessionIdleTimeout)
+	hub.PerClient = o.Config.Daemon.MaxSessionsPerClient
 	api := &API{Hub: hub, Svc: o.Service, Started: time.Now().UTC()}
 	if list, err := o.Service.Sessions(ctx); err == nil {
 		n := 0
@@ -201,6 +208,7 @@ func Run(ctx context.Context, o Options) error {
 
 	reap := time.NewTicker(time.Minute)
 	defer reap.Stop()
+	lastPrune := time.Time{}
 	var runErr error
 loop:
 	for {
@@ -213,6 +221,12 @@ loop:
 		case <-reap.C:
 			if n := hub.Reap(context.Background()); n > 0 {
 				log.Info("closed idle sessions", "count", n)
+			}
+			if time.Since(lastPrune) > 24*time.Hour {
+				lastPrune = time.Now()
+				if n, err := o.Service.PruneSessions(context.Background(), o.Config.Audit.Retention); err == nil && n > 0 {
+					log.Info("pruned old sessions", "count", n)
+				}
 			}
 		}
 	}
@@ -243,4 +257,47 @@ func newToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b[:]), nil
+}
+
+// redactHandler masks secrets in every log message and string attribute.
+type redactHandler struct {
+	inner slog.Handler
+	r     *redact.Redactor
+}
+
+func (h redactHandler) Enabled(ctx context.Context, l slog.Level) bool {
+	return h.inner.Enabled(ctx, l)
+}
+
+func (h redactHandler) Handle(ctx context.Context, rec slog.Record) error {
+	out := slog.NewRecord(rec.Time, rec.Level, h.r.String(rec.Message), rec.PC)
+	rec.Attrs(func(a slog.Attr) bool {
+		out.AddAttrs(h.attr(a))
+		return true
+	})
+	return h.inner.Handle(ctx, out)
+}
+
+func (h redactHandler) attr(a slog.Attr) slog.Attr {
+	switch a.Value.Kind() {
+	case slog.KindString:
+		return slog.String(a.Key, h.r.String(a.Value.String()))
+	case slog.KindAny:
+		if err, ok := a.Value.Any().(error); ok {
+			return slog.String(a.Key, h.r.String(err.Error()))
+		}
+	}
+	return a
+}
+
+func (h redactHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	clean := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		clean[i] = h.attr(a)
+	}
+	return redactHandler{inner: h.inner.WithAttrs(clean), r: h.r}
+}
+
+func (h redactHandler) WithGroup(name string) slog.Handler {
+	return redactHandler{inner: h.inner.WithGroup(name), r: h.r}
 }

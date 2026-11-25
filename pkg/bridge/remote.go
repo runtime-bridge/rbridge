@@ -206,7 +206,7 @@ func (r *Remote) answer(session string, approver domain.Approver, req domain.App
 		d = approver.Decide(context.Background(), req)
 	}
 	_ = r.call(context.Background(), "approvals.answer", map[string]any{
-		"session_id": session, "approval_id": req.ID, "option_id": d.OptionID, "allow": d.Allow,
+		"session_id": session, "approval_id": req.ID, "option_id": d.OptionID, "allow": d.Allow, "remember": d.Remember,
 	}, nil)
 }
 

@@ -100,6 +100,11 @@ func (s *Service) Doctor(ctx context.Context) Report {
 			available++
 			c.Status = CheckOK
 			c.Detail = fmt.Sprintf("%s %s at %s (auth: %s)", st.DisplayName, orDash(rt.Version), rt.Executable, rt.AuthMode)
+			if rt.Changed != "" {
+				c.Status = CheckWarn
+				c.Detail += "; " + rt.Changed
+				c.Fix = "If you installed or moved it yourself, run rbridge providers accept " + st.ID + "; otherwise check what is on your PATH."
+			}
 		case domain.HealthDisabled:
 			c.Status = CheckOK
 			c.Detail = "disabled in configuration"

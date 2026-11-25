@@ -12,6 +12,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/audit"
 	"github.com/runtime-bridge/rbridge/internal/domain"
 	"github.com/runtime-bridge/rbridge/internal/policy"
+	"github.com/runtime-bridge/rbridge/internal/redact"
 )
 
 // profile returns a built-in or the configured custom profile.
@@ -43,11 +44,15 @@ type gate struct {
 	user    domain.Approver
 	timeout time.Duration
 	sink    domain.EventSink
+	redact  *redact.Redactor
 
-	mu        sync.Mutex
-	approvals []audit.Approval
-	lastEdit  time.Time
+	mu         sync.Mutex
+	approvals  []audit.Approval
+	lastEdit   time.Time
+	remembered map[string]bool
 }
+
+func rememberKey(r domain.ApprovalRequest) string { return r.Tool + "|" + r.Kind }
 
 func (g *gate) record(req domain.ApprovalRequest, d domain.ApprovalDecision) {
 	decision := "deny"
@@ -55,9 +60,15 @@ func (g *gate) record(req domain.ApprovalRequest, d domain.ApprovalDecision) {
 		decision = "allow"
 	}
 	g.mu.Lock()
-	g.approvals = append(g.approvals, audit.Approval{Kind: req.Kind, Tool: req.Tool, Decision: decision, By: d.By, Reason: d.Reason})
+	g.approvals = append(g.approvals, audit.Approval{Kind: req.Kind, Tool: req.Tool, Decision: decision, By: d.By, Reason: g.redact.String(d.Reason), TimedOut: d.By == "timeout"})
 	if d.Allow && req.Kind == "edit" {
 		g.lastEdit = time.Now()
+	}
+	if d.Allow && d.Remember && d.By == "user" {
+		if g.remembered == nil {
+			g.remembered = map[string]bool{}
+		}
+		g.remembered[rememberKey(req)] = true
 	}
 	g.mu.Unlock()
 }
@@ -74,7 +85,15 @@ func (g *gate) Decide(ctx context.Context, req domain.ApprovalRequest) domain.Ap
 		d = req.RejectOnce("policy")
 		d.Reason = why
 	default:
-		d = g.ask(ctx, req)
+		g.mu.Lock()
+		again := g.remembered[rememberKey(req)]
+		g.mu.Unlock()
+		if again {
+			d = req.AllowOnce("session")
+			d.Reason = "allowed for the rest of this session"
+		} else {
+			d = g.ask(ctx, req)
+		}
 	}
 	g.record(req, d)
 	g.emit(domain.NewEvent(domain.EventApprovalResolved, domain.ApprovalResolvedData{ID: req.ID, Decision: d}))
@@ -105,9 +124,16 @@ func (g *gate) ask(ctx context.Context, req domain.ApprovalRequest) domain.Appro
 	if actx.Err() != nil && ctx.Err() == nil {
 		d = req.RejectOnce("timeout")
 		d.Reason = fmt.Sprintf("no answer within %s", g.timeout)
+		g.emit(domain.NewEvent(domain.EventNotice, domain.NoticeData{Level: "warn", Message: "approval timed out and was denied: " + req.Title}))
 	}
 	if d.By == "" {
 		d.By = "user"
+	}
+	// Choosing an allow_always option means the same as Remember.
+	for _, o := range req.Options {
+		if o.ID == d.OptionID && o.Kind == "allow_always" && d.Allow {
+			d.Remember = true
+		}
 	}
 	return d
 }

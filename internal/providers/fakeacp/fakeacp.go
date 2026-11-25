@@ -234,6 +234,12 @@ func (a *agent) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResp
 		}
 		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 
+	case "leak":
+		secret := os.Getenv("RBRIDGE_FAKE_SECRET_TOKEN")
+		a.send(ctx, sid, sdk.UpdateAgentMessageText("the key is "+secret))
+		fmt.Fprintln(os.Stderr, "fatal: request failed with key "+secret)
+		os.Exit(4)
+
 	case "env":
 		var parts []string
 		for _, name := range strings.Fields(text) {

@@ -395,6 +395,15 @@ func TestConcurrencyLimit(t *testing.T) {
 	if _, err := svc.OpenSession(wctx, domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "opencode"}, RunOptions{}); domain.CodeOf(err) != domain.ErrCancelled {
 		t.Fatalf("second session should wait for a slot: %v", err)
 	}
+	h.cfg.Execution.SlotWait = 200 * time.Millisecond
+	svc2 := h.svc()
+	held, _ := svc2.OpenSession(ctx, domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "opencode"}, RunOptions{})
+	start := time.Now()
+	_, err = svc2.OpenSession(ctx, domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "opencode"}, RunOptions{})
+	if domain.CodeOf(err) != domain.ErrProviderUnavailable || time.Since(start) > 5*time.Second {
+		t.Fatalf("a full service must fail after slot_wait, got %v", err)
+	}
+	held.Close(ctx)
 	first.Close(ctx)
 	second, err := svc.OpenSession(ctx, domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "opencode"}, RunOptions{})
 	if err != nil {
@@ -464,5 +473,21 @@ func TestErrorsNameTheAccount(t *testing.T) {
 	var de *domain.Error
 	if !errors.As(err, &de) || de.Code != domain.ErrAuthenticationRequired || de.Provider != "claude-code-alt" {
 		t.Fatalf("got %#v", err)
+	}
+}
+
+func TestAuthModeRemembered(t *testing.T) {
+	h := newRunHarness(t)
+	svc := h.svc()
+	ctx := context.Background()
+	if p, _ := svc.Provider(ctx, "claude-code", true); p.Runtime.AuthMode != domain.AuthUnknown {
+		t.Fatalf("before any session: %s", p.Runtime.AuthMode)
+	}
+	// The fake reports a plan rate limit event, which only subscription logins get.
+	if _, err := svc.Run(ctx, domain.Task{Workspace: h.workspace(), Prompt: domain.Text("x"), Provider: "claude-code"}, RunOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := svc.Provider(ctx, "claude-code", true); p.Runtime.AuthMode != domain.AuthSubscription {
+		t.Fatalf("after a session: %s", p.Runtime.AuthMode)
 	}
 }

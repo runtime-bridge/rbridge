@@ -130,7 +130,9 @@ type ExecutionConfig struct {
 	KillGracePeriod       time.Duration `yaml:"kill_grace_period"`
 	DetectTimeout         time.Duration `yaml:"detect_timeout"`
 	IdleTimeout           time.Duration `yaml:"idle_timeout"`
-	DetectCacheTTL        time.Duration `yaml:"detect_cache_ttl"`
+	// SlotWait is how long a new session waits for a free slot before failing.
+	SlotWait       time.Duration `yaml:"slot_wait"`
+	DetectCacheTTL time.Duration `yaml:"detect_cache_ttl"`
 }
 
 type AuditConfig struct {
@@ -151,6 +153,8 @@ type DaemonConfig struct {
 	RequestsPerSecond float64 `yaml:"requests_per_second"`
 	// SessionIdleTimeout closes daemon sessions nobody has used for this long.
 	SessionIdleTimeout time.Duration `yaml:"session_idle_timeout"`
+	// MaxSessionsPerClient limits open sessions per client name; 0 is no limit.
+	MaxSessionsPerClient int `yaml:"max_sessions_per_client"`
 }
 
 // HTTPConfig is the daemon's local HTTP listener.
@@ -188,15 +192,17 @@ func Defaults() Config {
 			KillGracePeriod:       10 * time.Second,
 			DetectTimeout:         5 * time.Second,
 			IdleTimeout:           5 * time.Minute,
+			SlotWait:              30 * time.Second,
 			DetectCacheTTL:        10 * time.Minute,
 		},
 		Audit: AuditConfig{Enabled: true, Level: "metadata", Retention: 30 * 24 * time.Hour},
 		Daemon: func() DaemonConfig {
 			d := DaemonConfig{
-				HTTP:               HTTPConfig{Host: "127.0.0.1", Port: 7432},
-				EventBuffer:        2000,
-				RequestsPerSecond:  20,
-				SessionIdleTimeout: 30 * time.Minute,
+				HTTP:                 HTTPConfig{Host: "127.0.0.1", Port: 7432},
+				EventBuffer:          2000,
+				RequestsPerSecond:    20,
+				SessionIdleTimeout:   30 * time.Minute,
+				MaxSessionsPerClient: 8,
 			}
 			d.IPC.Enabled = true
 			return d
@@ -480,6 +486,7 @@ func (c Config) Validate() error {
 		"execution.kill_grace_period": c.Execution.KillGracePeriod,
 		"execution.detect_timeout":    c.Execution.DetectTimeout,
 		"execution.idle_timeout":      c.Execution.IdleTimeout,
+		"execution.slot_wait":         c.Execution.SlotWait,
 		"policy.approval_timeout":     c.Policy.ApprovalTimeout,
 	} {
 		if d <= 0 {
@@ -497,6 +504,9 @@ func (c Config) Validate() error {
 	}
 	if c.Daemon.EventBuffer < 10 {
 		return errors.New("daemon.event_buffer must be at least 10")
+	}
+	if c.Daemon.MaxSessionsPerClient < 0 {
+		return errors.New("daemon.max_sessions_per_client must not be negative")
 	}
 	if c.Daemon.RequestsPerSecond <= 0 {
 		return errors.New("daemon.requests_per_second must be positive")

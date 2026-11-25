@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/runtime-bridge/rbridge/internal/domain"
 	"github.com/runtime-bridge/rbridge/internal/service"
@@ -27,8 +28,10 @@ func cmdSessions(ctx context.Context, args []string, env Env) error {
 		return sessionsResume(ctx, args, env)
 	case "cancel":
 		return sessionsCancel(ctx, args, env)
+	case "prune":
+		return sessionsPrune(ctx, args, env)
 	}
-	return domain.Errorf(domain.ErrInvalidInput, "unknown sessions command %q (list, show, resume, cancel)", sub)
+	return domain.Errorf(domain.ErrInvalidInput, "unknown sessions command %q (list, show, resume, cancel, prune)", sub)
 }
 
 func sessionsList(ctx context.Context, args []string, env Env) error {
@@ -158,5 +161,23 @@ func sessionsCancel(ctx context.Context, args []string, env Env) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "asked the rbridge process running %s to cancel it\n", pos[0])
+	return nil
+}
+
+func sessionsPrune(ctx context.Context, args []string, env Env) error {
+	fs := newFlags("sessions prune", env)
+	older := fs.Duration("older-than", 30*24*time.Hour, "delete finished sessions last used before this long ago")
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	svc, err := newService(env)
+	if err != nil {
+		return err
+	}
+	n, err := svc.PruneSessions(ctx, *older)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(env.Stdout, "pruned %d sessions\n", n)
 	return nil
 }

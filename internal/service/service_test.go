@@ -252,3 +252,52 @@ func TestDoctorReportsDisabledAndMissing(t *testing.T) {
 		}
 	}
 }
+
+func TestExecutableChangeIsFlagged(t *testing.T) {
+	h := newHarness(t)
+	h.exe(t, "opencode", `echo 1.19.6`)
+	cfg := config.Defaults()
+	cfg.Execution.DetectCacheTTL = 0
+	svc := h.service(t, cfg)
+	ctx := context.Background()
+	first, _ := svc.Provider(ctx, "opencode", true)
+	if first.Runtime.Changed != "" {
+		t.Fatalf("first sighting must be accepted silently: %+v", first.Runtime)
+	}
+	// An upgrade in place is accepted with a note.
+	h.exe(t, "opencode", `echo 1.20.0`)
+	up, _ := svc.Provider(ctx, "opencode", true)
+	if up.Runtime.Changed != "" || !strings.Contains(strings.Join(up.Runtime.Notes, " "), "updated from 1.19.6 to 1.20.0") {
+		t.Fatalf("upgrade: %+v", up.Runtime)
+	}
+	// Same version, different contents: flagged.
+	h.exe(t, "opencode", "echo 1.20.0\n# tampered with extra bytes")
+	if p, _ := svc.Provider(ctx, "opencode", true); !strings.Contains(p.Runtime.Changed, "without a version change") {
+		t.Fatalf("tamper: %+v", p.Runtime)
+	}
+	if _, err := svc.AcceptExecutable(ctx, "opencode"); err != nil {
+		t.Fatal(err)
+	}
+	// A different binary earlier on PATH: flagged until accepted.
+	early := filepath.Join(h.home, "early")
+	os.MkdirAll(early, 0o755)
+	os.WriteFile(filepath.Join(early, "opencode"), []byte("#!/bin/sh\necho 1.20.0\n"), 0o755)
+	h.env["PATH"] = early + ":" + h.bin
+	moved, _ := svc.Provider(ctx, "opencode", true)
+	if !strings.Contains(moved.Runtime.Changed, "was "+filepath.Join(h.bin, "opencode")) {
+		t.Fatalf("path change: %+v", moved.Runtime)
+	}
+	if again, _ := svc.Provider(ctx, "opencode", true); again.Runtime.Changed == "" {
+		t.Fatal("a path change must stay flagged until accepted")
+	}
+	r := svc.Doctor(ctx)
+	for _, c := range r.Checks {
+		if c.Name == "provider opencode" && c.Status != CheckWarn {
+			t.Errorf("doctor should warn: %+v", c)
+		}
+	}
+	svc.AcceptExecutable(ctx, "opencode")
+	if ok, _ := svc.Provider(ctx, "opencode", true); ok.Runtime.Changed != "" {
+		t.Fatalf("accepted: %+v", ok.Runtime)
+	}
+}

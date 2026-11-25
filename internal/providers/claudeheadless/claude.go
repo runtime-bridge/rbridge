@@ -270,7 +270,10 @@ func (s *Session) finish(r resultMsg, ts *turnState) (domain.TurnResult, error) 
 	if out == "" {
 		out = s.textOf(ts)
 	}
-	res := domain.TurnResult{StopReason: stop, Output: out, Usage: usage}
+	s.mu.Lock()
+	auth := s.authMode
+	s.mu.Unlock()
+	res := domain.TurnResult{StopReason: stop, Output: out, Usage: usage, AuthMode: auth}
 	if len(r.StructuredOutput) > 0 && string(r.StructuredOutput) != "null" {
 		res.Structured = r.StructuredOutput
 	} else if len(s.opts.OutputSchema) > 0 && json.Valid([]byte(strings.TrimSpace(out))) {

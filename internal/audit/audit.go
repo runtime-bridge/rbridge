@@ -24,6 +24,7 @@ type Approval struct {
 	Decision string `json:"decision"` // allow or deny
 	By       string `json:"by"`
 	Reason   string `json:"reason,omitempty"`
+	TimedOut bool   `json:"timed_out,omitempty"`
 }
 
 // Record describes one session.

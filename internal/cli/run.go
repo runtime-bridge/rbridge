@@ -214,14 +214,9 @@ func newApprover(mode string, env Env, in *bufio.Reader) (domain.Approver, error
 		}), nil
 	case "ask":
 		var mu sync.Mutex
-		always := map[string]bool{}
 		return domain.ApproverFunc(func(ctx context.Context, r domain.ApprovalRequest) domain.ApprovalDecision {
 			mu.Lock()
 			defer mu.Unlock()
-			key := r.Tool + "|" + r.Kind
-			if always[key] {
-				return r.AllowOnce("user")
-			}
 			fmt.Fprintf(env.Stderr, "\n[approve] %s wants to: %s\n          allow? [y]es / [n]o / [a]lways this session: ", r.Tool, r.Title)
 			answer := make(chan string, 1)
 			go func() {
@@ -234,8 +229,9 @@ func newApprover(mode string, env Env, in *bufio.Reader) (domain.Approver, error
 				case "y", "yes":
 					return r.AllowOnce("user")
 				case "a", "always":
-					always[key] = true
-					return r.AllowOnce("user")
+					d := r.AllowOnce("user")
+					d.Remember = true
+					return d
 				}
 				d := r.RejectOnce("user")
 				d.Reason = "denied by the user"

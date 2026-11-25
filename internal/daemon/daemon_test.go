@@ -80,6 +80,7 @@ func start(t *testing.T, scenarios map[string]string) *env {
 	cfg.Daemon.HTTP.Enabled = true
 	cfg.Daemon.HTTP.Port = 0
 	cfg.Daemon.RequestsPerSecond = 1000
+	cfg.Execution.MaxConcurrentSessions = 20
 	paths, _ := config.ResolvePaths(config.Env{GOOS: "linux", Getenv: func(k string) string {
 		if k == "RBRIDGE_HOME" {
 			return filepath.Join(home, "rb")
@@ -417,4 +418,29 @@ func TestLongRuntimeDirGetsShortSocket(t *testing.T) {
 	if short.Socket != "/run/user/1000/rbridge/bridge.sock" {
 		t.Fatalf("short dir: %s", short.Socket)
 	}
+}
+
+func TestPerClientSessionLimit(t *testing.T) {
+	e := start(t, nil)
+	ctx := context.Background()
+	var opened []string
+	for i := 0; i < 8; i++ {
+		resp, b := e.req("POST", "/v1/sessions", "greedy", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}, nil)
+		if resp.StatusCode != 201 {
+			t.Fatalf("session %d: %s", i, b)
+		}
+		var rec domain.SessionRecord
+		json.Unmarshal(b, &rec)
+		opened = append(opened, rec.ID)
+	}
+	if resp, b := e.req("POST", "/v1/sessions", "greedy", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}, nil); resp.StatusCode != 409 || !strings.Contains(string(b), "already has 8 open sessions") {
+		t.Fatalf("limit not applied: %d %s", resp.StatusCode, b)
+	}
+	if resp, _ := e.req("POST", "/v1/sessions", "other", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}, nil); resp.StatusCode != 201 {
+		t.Fatal("the limit is per client")
+	}
+	for _, id := range opened {
+		e.req("DELETE", "/v1/sessions/"+id, "greedy", nil, nil)
+	}
+	_ = ctx
 }

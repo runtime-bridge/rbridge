@@ -25,6 +25,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/providers/acp"
 	"github.com/runtime-bridge/rbridge/internal/providers/claudeheadless"
 	"github.com/runtime-bridge/rbridge/internal/providers/registry"
+	"github.com/runtime-bridge/rbridge/internal/redact"
 	"github.com/runtime-bridge/rbridge/internal/skills/deliver"
 	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 )
@@ -84,6 +85,7 @@ type sequencer struct {
 	log      *os.File
 	keepRaw  bool
 	now      func() time.Time
+	redact   *redact.Redactor
 }
 
 func (q *sequencer) Emit(e domain.Event) {
@@ -100,6 +102,7 @@ func (q *sequencer) Emit(e domain.Event) {
 			le.Raw = nil
 		}
 		b, _ := json.Marshal(le)
+		b = q.redact.Bytes(b)
 		q.logMu.Lock()
 		q.log.Write(append(b, '\n'))
 		q.logMu.Unlock()
@@ -266,6 +269,7 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	// are not sessions and leave no record.
 	persisted := false
 	fail := func(err error) (*Session, error) {
+		err = s.scrub(err)
 		if persisted {
 			rec.State, rec.LastError, rec.UpdatedAt = domain.StateFailed, err.Error(), s.now()
 			_ = s.store.Put(context.Background(), sessionCollection, rec.ID, rec)
@@ -289,7 +293,7 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	rec.Profile = prof.Name
 	rec.Unenforced = unenforced
 
-	seq := &sequencer{session: rec.ID, provider: m.ID, out: ro.Sink, now: s.now, keepRaw: s.cfg.Audit.Level == "full"}
+	seq := &sequencer{session: rec.ID, provider: m.ID, out: ro.Sink, now: s.now, keepRaw: s.cfg.Audit.Level == "full", redact: s.redact}
 	if s.cfg.Audit.Level == "events" || s.cfg.Audit.Level == "full" {
 		dir := filepath.Join(s.paths.DataDir, "events")
 		if err := os.MkdirAll(dir, 0o700); err == nil {
@@ -309,8 +313,11 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 		pctx.Skills[dir] = trusts[id].trust
 		pctx.Skills[trusts[id].lib] = trusts[id].trust
 	}
-	g := &gate{profile: prof, pctx: pctx, user: ro.Approver, timeout: s.cfg.Policy.ApprovalTimeout, sink: seq}
+	g := &gate{profile: prof, pctx: pctx, user: ro.Approver, timeout: s.cfg.Policy.ApprovalTimeout, sink: seq, redact: s.redact}
 	seq.Emit(domain.NewEvent(domain.EventNotice, enforcementNotice(prof, controls)))
+	if st.Runtime.Changed != "" {
+		seq.Emit(domain.NewEvent(domain.EventNotice, domain.NoticeData{Level: "warn", Message: m.DisplayName + ": " + st.Runtime.Changed + "; run rbridge providers accept " + m.ID + " if you expected this"}))
+	}
 
 	allow := append(slices.Clone(s.cfg.Policy.EnvAllowlist), m.Launch.EnvPassthrough...)
 	extra := maps.Clone(plan.Env)
@@ -443,6 +450,7 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 	s.rec.NativeID = s.ps.NativeID()
 	s.rec.UpdatedAt = s.svc.now()
 	if err != nil {
+		err = s.svc.scrub(err)
 		s.rec.State = domain.StateReady
 		s.rec.LastError = err.Error()
 	} else {
@@ -472,7 +480,10 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 	s.mu.Lock()
 	s.lastOutput, s.lastCode = res.Output, ""
 	s.mu.Unlock()
-	s.sink.Emit(domain.NewEvent(domain.EventTurnCompleted, domain.TurnCompletedData(res)))
+	if res.AuthMode != "" && res.AuthMode != domain.AuthUnknown {
+		_ = s.svc.store.Put(context.Background(), authCollection, s.m.ID, observedAuth{Mode: res.AuthMode, At: s.svc.now()})
+	}
+	s.sink.Emit(domain.NewEvent(domain.EventTurnCompleted, domain.TurnCompletedData{StopReason: res.StopReason, Output: res.Output, Structured: res.Structured, Usage: res.Usage}))
 	return domain.Result{
 		SessionID: rec.ID, StopReason: res.StopReason, Output: res.Output, Structured: res.Structured,
 		Usage: res.Usage, Provider: s.m.ID, Skills: rec.Skills,
@@ -544,12 +555,21 @@ func (s *Service) Run(ctx context.Context, t domain.Task, ro RunOptions) (domain
 }
 
 func (s *Service) acquire(ctx context.Context) (func(), error) {
+	wait := s.cfg.Execution.SlotWait
+	if wait <= 0 {
+		wait = 30 * time.Second
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
 	select {
 	case s.slots <- struct{}{}:
 		var once sync.Once
 		return func() { once.Do(func() { <-s.slots }) }, nil
 	case <-ctx.Done():
 		return nil, domain.Errorf(domain.ErrCancelled, "waiting for a free session slot: %v", ctx.Err())
+	case <-timer.C:
+		return nil, &domain.Error{Code: domain.ErrProviderUnavailable, Retryable: true,
+			Message: fmt.Sprintf("all %d session slots are busy (execution.max_concurrent_sessions); try again later", cap(s.slots))}
 	}
 }
 
@@ -634,4 +654,54 @@ func (s *Service) launchArgs(m registry.Manifest) []string {
 		return a
 	}
 	return m.Launch.Args
+}
+
+// scrub masks secrets in an error's message and details. Runtime stderr ends
+// up in details and may contain keys.
+func (s *Service) scrub(err error) error {
+	var de *domain.Error
+	if !errors.As(err, &de) {
+		return err
+	}
+	de.Message = s.redact.String(de.Message)
+	s.redact.Map(de.Details)
+	return de
+}
+
+const authCollection = "auth"
+
+// observedAuth is the sign-in mode a runtime revealed during a session.
+type observedAuth struct {
+	Mode domain.AuthMode `json:"mode"`
+	At   time.Time       `json:"at"`
+}
+
+// PruneSessions deletes finished sessions last updated before the cutoff,
+// with their event logs. Open sessions are never pruned.
+func (s *Service) PruneSessions(ctx context.Context, olderThan time.Duration) (int, error) {
+	if olderThan <= 0 {
+		return 0, domain.Errorf(domain.ErrInvalidInput, "age must be positive")
+	}
+	list, err := s.Sessions(ctx)
+	if err != nil {
+		return 0, err
+	}
+	cutoff := s.now().Add(-olderThan)
+	n := 0
+	for _, r := range list {
+		switch r.State {
+		case domain.StateClosed, domain.StateFailed, domain.StateInterrupted:
+		default:
+			continue
+		}
+		if r.UpdatedAt.After(cutoff) {
+			continue
+		}
+		if err := s.store.Delete(ctx, sessionCollection, r.ID); err != nil {
+			return n, err
+		}
+		os.Remove(filepath.Join(s.paths.DataDir, "events", r.ID+".jsonl"))
+		n++
+	}
+	return n, nil
 }

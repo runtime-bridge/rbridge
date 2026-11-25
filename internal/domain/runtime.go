@@ -52,6 +52,8 @@ type TurnResult struct {
 	Output     string
 	Structured json.RawMessage
 	Usage      *Usage
+	// AuthMode is what the runtime revealed about its sign-in, if anything.
+	AuthMode AuthMode
 }
 
 // Runtime starts sessions. Providers that can run tasks implement it in
@@ -99,8 +101,12 @@ type ApprovalDecision struct {
 	// OptionID is one of the request's options; empty means cancelled.
 	OptionID string `json:"option_id,omitempty"`
 	Allow    bool   `json:"allow"`
-	By       string `json:"by"` // "user", "policy", "timeout"
+	By       string `json:"by"` // "user", "policy", "timeout", "session"
 	Reason   string `json:"reason,omitempty"`
+	// Remember allows the same tool and kind for the rest of this session
+	// without asking again. It never outlives the session and never
+	// overrides a policy denial.
+	Remember bool `json:"remember,omitempty"`
 }
 
 // Approver decides approval requests. It must return when ctx is done.

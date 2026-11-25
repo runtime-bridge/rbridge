@@ -18,7 +18,9 @@ type Hub struct {
 	svc         *service.Service
 	bufSize     int
 	idleTimeout time.Duration
-	now         func() time.Time
+	// PerClient limits open sessions per client; 0 means no limit.
+	PerClient int
+	now       func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]*live
@@ -117,6 +119,18 @@ func (h *Hub) register(owner string, open func(service.RunOptions) (*service.Ses
 	if h.closed {
 		h.mu.Unlock()
 		return nil, domain.Errorf(domain.ErrProviderUnavailable, "daemon is shutting down")
+	}
+	if h.PerClient > 0 {
+		n := 0
+		for _, l := range h.sessions {
+			if l.owner == owner {
+				n++
+			}
+		}
+		if n >= h.PerClient {
+			h.mu.Unlock()
+			return nil, domain.Errorf(domain.ErrPermissionDenied, "client %s already has %d open sessions; close one first", owner, n)
+		}
 	}
 	h.mu.Unlock()
 	l := &live{
@@ -231,7 +245,7 @@ func (h *Hub) Cancel(ctx context.Context, owner, id string) error {
 }
 
 // Answer resolves a pending approval.
-func (h *Hub) Answer(owner, id, approvalID string, allow bool, optionID string) error {
+func (h *Hub) Answer(owner, id, approvalID string, allow bool, optionID string, remember bool) error {
 	l, err := h.get(owner, id)
 	if err != nil {
 		return err
@@ -261,6 +275,7 @@ func (h *Hub) Answer(owner, id, approvalID string, allow bool, optionID string) 
 		d = req.RejectOnce("user")
 		d.Reason = "denied by the client"
 	}
+	d.Remember = remember && d.Allow
 	select {
 	case ch <- d:
 		return nil

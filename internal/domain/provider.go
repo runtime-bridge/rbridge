@@ -65,6 +65,9 @@ type RuntimeInfo struct {
 	Pinned        bool           `json:"pinned,omitempty"`
 	Notes         []string       `json:"notes,omitempty"`
 	DetectedAt    time.Time      `json:"detected_at"`
+	// Changed is set when the executable is not the one rbridge last accepted
+	// for this provider.
+	Changed string `json:"changed,omitempty"`
 }
 
 // Provider is the contract every runtime adapter implements.

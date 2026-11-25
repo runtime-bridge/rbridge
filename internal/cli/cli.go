@@ -55,6 +55,7 @@ const usage = `rbridge connects your software to the agent runtimes installed on
 Usage:
   rbridge providers [--refresh] [--json]       List runtimes and their status
   rbridge providers show <id>                  Capabilities, skill locations and limits
+  rbridge providers accept <id>                Accept a changed runtime executable
   rbridge doctor [--json]                      Check configuration, directories and runtimes
   rbridge config [--defaults]                  Print the effective configuration and its layers
 
@@ -64,7 +65,8 @@ Usage:
       --profile observe|standard|controlled|custom   --approve ask|allow|deny
       --timeout 10m   --schema FILE   --json   --quiet
 
-  rbridge sessions [list|show|resume|cancel]   Manage sessions
+  rbridge sessions [list|show|resume|cancel|prune]
+                                               Manage sessions
   rbridge skills list|add|show|trust|verify|remove|deliver
                                                Manage the skill library
   rbridge audit [--since 24h] [--json]         One line per session: profile, approvals, gaps
@@ -215,6 +217,21 @@ func cmdProviders(ctx context.Context, args []string, env Env) error {
 	if len(args) > 0 && args[0] == "show" {
 		return cmdProvidersShow(ctx, args[1:], env)
 	}
+	if len(args) > 0 && args[0] == "accept" {
+		if len(args) != 2 {
+			return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge providers accept <id>")
+		}
+		svc, err := newService(env)
+		if err != nil {
+			return err
+		}
+		info, err := svc.AcceptExecutable(ctx, args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "accepted %s %s for %s\n", info.Executable, dash(info.Version), args[1])
+		return nil
+	}
 	fs := newFlags("providers", env)
 	refresh := fs.Bool("refresh", false, "detect again instead of using the cache")
 	asJSON := fs.Bool("json", false, "print JSON")
@@ -238,11 +255,23 @@ func cmdProviders(ctx context.Context, args []string, env Env) error {
 	}
 	tw := tabwriter.NewWriter(env.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "PROVIDER\tSTATUS\tVERSION\tINTEGRATION\tAUTH\tPATH")
+	var changed []string
 	for _, p := range list {
 		rt := p.Runtime
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", p.ID, rt.Health, dash(rt.Version), rt.Integration, rt.AuthMode, dash(rt.Executable))
+		status := string(rt.Health)
+		if rt.Changed != "" {
+			status += " (changed)"
+			changed = append(changed, p.ID+": "+rt.Changed)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", p.ID, status, dash(rt.Version), rt.Integration, rt.AuthMode, dash(rt.Executable))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	for _, c := range changed {
+		fmt.Fprintf(env.Stderr, "[warn] %s; run rbridge providers accept <id> if you expected this\n", c)
+	}
+	return nil
 }
 
 func cmdProvidersShow(ctx context.Context, args []string, env Env) error {

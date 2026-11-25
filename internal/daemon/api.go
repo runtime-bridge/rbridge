@@ -77,6 +77,7 @@ type answerParams struct {
 	ApprovalID string `json:"approval_id"`
 	Allow      bool   `json:"allow"`
 	OptionID   string `json:"option_id"`
+	Remember   bool   `json:"remember"`
 }
 
 type skillAddParams struct {
@@ -232,7 +233,7 @@ func (a *API) Methods() map[string]Method {
 			if err := decode(p, &in); err != nil {
 				return nil, err
 			}
-			return map[string]bool{"answered": true}, a.Hub.Answer(owner, in.SessionID, in.ApprovalID, in.Allow, in.OptionID)
+			return map[string]bool{"answered": true}, a.Hub.Answer(owner, in.SessionID, in.ApprovalID, in.Allow, in.OptionID, in.Remember)
 		},
 		"run": func(ctx context.Context, owner string, p json.RawMessage) (any, error) {
 			var in OpenRequest

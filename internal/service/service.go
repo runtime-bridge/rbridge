@@ -19,6 +19,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/providers/accounts"
 	"github.com/runtime-bridge/rbridge/internal/providers/detect"
 	"github.com/runtime-bridge/rbridge/internal/providers/registry"
+	"github.com/runtime-bridge/rbridge/internal/redact"
 	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
 	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 	"github.com/runtime-bridge/rbridge/internal/store"
@@ -36,7 +37,11 @@ type Service struct {
 	environ  func() []string
 	now      func() time.Time
 	slots    chan struct{}
+	redact   *redact.Redactor
 }
+
+// Redactor masks secrets in text rbridge stores or logs.
+func (s *Service) Redactor() *redact.Redactor { return s.redact }
 
 // Options wires a Service. Fields left empty get working defaults.
 type Options struct {
@@ -116,7 +121,8 @@ func New(o Options) (*Service, error) {
 	return &Service{
 		paths: o.Paths, cfg: o.Config, layers: o.Layers, registry: reg,
 		detector: o.Detector, store: o.Store, getenv: o.Getenv, environ: o.Environ, now: o.Now,
-		slots: make(chan struct{}, max(1, o.Config.Execution.MaxConcurrentSessions)),
+		slots:  make(chan struct{}, max(1, o.Config.Execution.MaxConcurrentSessions)),
+		redact: redact.New().FromEnviron(o.Environ()),
 	}, nil
 }
 
@@ -270,6 +276,14 @@ func (s *Service) status(ctx context.Context, m registry.Manifest, refresh bool)
 		}
 	}
 
+	s.checkExecutable(ctx, m.ID, &info)
+	if info.AuthMode == domain.AuthUnknown {
+		var seen observedAuth
+		if ok, _ := s.store.Get(ctx, authCollection, m.ID, &seen); ok && seen.Mode != "" {
+			info.AuthMode = seen.Mode
+			info.Notes = append(info.Notes, "sign-in mode "+string(seen.Mode)+" seen in the session at "+seen.At.Local().Format("2006-01-02 15:04"))
+		}
+	}
 	notes := append([]string(nil), m.Notes...)
 	notes = append(notes, info.Notes...)
 	return ProviderStatus{
@@ -337,4 +351,72 @@ func ensureDir(dir string) error {
 	name := f.Name()
 	f.Close()
 	return os.Remove(filepath.Clean(name))
+}
+
+const seenCollection = "seen"
+
+// seenExecutable is the executable rbridge last accepted for a provider.
+type seenExecutable struct {
+	Path     string    `json:"path"`
+	Resolved string    `json:"resolved"`
+	Version  string    `json:"version"`
+	Size     int64     `json:"size"`
+	At       time.Time `json:"at"`
+}
+
+func (s *Service) currentExecutable(info domain.RuntimeInfo) (seenExecutable, bool) {
+	if info.Executable == "" || (info.Health != domain.HealthAvailable && info.Health != domain.HealthNeedsAPIKey) {
+		return seenExecutable{}, false
+	}
+	cur := seenExecutable{Path: info.Executable, Resolved: info.Executable, Version: info.Version, At: s.now()}
+	if r, err := filepath.EvalSymlinks(info.Executable); err == nil {
+		cur.Resolved = r
+	}
+	if fi, err := os.Stat(cur.Resolved); err == nil {
+		cur.Size = fi.Size()
+	}
+	return cur, true
+}
+
+// checkExecutable compares the detected executable with the accepted one.
+// A different path, or the same version with different contents, is flagged
+// until the user accepts it; an upgrade in place is accepted with a note.
+func (s *Service) checkExecutable(ctx context.Context, id string, info *domain.RuntimeInfo) {
+	cur, ok := s.currentExecutable(*info)
+	if !ok {
+		return
+	}
+	var prev seenExecutable
+	found, err := s.store.Get(ctx, seenCollection, id, &prev)
+	if err != nil {
+		return
+	}
+	switch {
+	case !found:
+		_ = s.store.Put(ctx, seenCollection, id, cur)
+	case prev.Path != cur.Path:
+		info.Changed = fmt.Sprintf("executable is now %s, was %s", cur.Path, prev.Path)
+	case prev.Version == cur.Version && prev.Size != 0 && cur.Size != 0 && prev.Size != cur.Size:
+		info.Changed = fmt.Sprintf("%s changed size (%d to %d bytes) without a version change", cur.Path, prev.Size, cur.Size)
+	case prev.Version != cur.Version || prev.Resolved != cur.Resolved:
+		info.Notes = append(info.Notes, fmt.Sprintf("updated from %s to %s", orDash(prev.Version), orDash(cur.Version)))
+		_ = s.store.Put(ctx, seenCollection, id, cur)
+	}
+	if info.Changed != "" {
+		info.Notes = append(info.Notes, "not the executable rbridge last used: "+info.Changed+"; run rbridge providers accept "+id+" if you expected this")
+	}
+}
+
+// AcceptExecutable records the provider's current executable as expected.
+func (s *Service) AcceptExecutable(ctx context.Context, id string) (domain.RuntimeInfo, error) {
+	m, ok := s.registry.Get(id)
+	if !ok {
+		return domain.RuntimeInfo{}, domain.Errorf(domain.ErrProviderNotFound, "no provider %q", id)
+	}
+	info := s.detector.Detect(ctx, m, s.cfg.Providers.Settings[id])
+	cur, ok := s.currentExecutable(info)
+	if !ok {
+		return info, domain.Errorf(domain.ErrProviderUnavailable, "%s has no runnable executable to accept", id)
+	}
+	return info, s.store.Put(ctx, seenCollection, id, cur)
 }
