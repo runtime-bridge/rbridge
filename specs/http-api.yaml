@@ -111,9 +111,40 @@ components:
         turn_id: { type: string }
         type:
           type: string
-          enum: [session.started, skill.delivered, turn.started, message.delta, thought.delta, plan.updated, tool.started, tool.updated, approval.required, approval.resolved, usage.updated, notice, turn.completed, turn.failed, session.closed]
+          enum: [session.started, skill.delivered, turn.started, message.delta, thought.delta, plan.updated, tool.started, tool.updated, approval.required, approval.resolved, usage.updated, notice, turn.completed, turn.failed, session.closed, mode.updated, input.required, input.resolved]
         data: {}
         provider: { type: string }
+    Mode:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+    ModeState:
+      type: object
+      properties:
+        current: { type: string }
+        modes: { type: array, items: { $ref: "#/components/schemas/Mode" } }
+    ConfigOption:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        type: { type: string, enum: [select, boolean] }
+        current: { type: string }
+        options:
+          type: array
+          items: { type: object, properties: { value: { type: string }, name: { type: string } } }
+    InputRequest:
+      type: object
+      properties:
+        id: { type: string }
+        session_id: { type: string }
+        message: { type: string }
+        mode: { type: string, enum: [form, url] }
+        schema: { type: object, description: JSON schema of the form }
+        url: { type: string, description: page for the user to open; rbridge never opens it }
   responses:
     Error:
       description: Error
@@ -212,6 +243,8 @@ paths:
               properties:
                 task: { $ref: "#/components/schemas/Task" }
                 model: { type: string }
+                mode: { type: string, description: runtime session mode to switch to once the session opens }
+                input: { type: boolean, description: "the client answers input.required events; otherwise the runtime's questions are declined" }
       responses:
         "201":
           description: Session record
@@ -235,6 +268,14 @@ paths:
     parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
     post:
       summary: Reopen a stored session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: { type: string }
+                input: { type: boolean }
       responses:
         "200": { description: Session record }
   /v1/sessions/{id}/turns:
@@ -299,6 +340,91 @@ paths:
               properties:
                 allow: { type: boolean }
                 option_id: { type: string, description: one of the request's option ids; overrides allow }
+                remember: { type: boolean, description: allow the same tool and kind for the rest of the session; never overrides a policy denial }
+      responses:
+        "200": { description: Answered }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/sessions/{id}/modes:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    get:
+      summary: The runtime's current session mode and the modes it offers
+      description: Claude Code sessions return capability_unavailable, since its permission modes could bypass policy.
+      responses:
+        "200":
+          description: Modes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModeState" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/sessions/{id}/mode:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    put:
+      summary: Switch the runtime's session mode
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [mode], properties: { mode: { type: string } } }
+      responses:
+        "200":
+          description: Modes after the change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModeState" }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/sessions/{id}/options:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    get:
+      summary: The runtime's session settings, such as its model
+      responses:
+        "200":
+          description: Options
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ConfigOption" } }
+  /v1/sessions/{id}/options/{option_id}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: option_id, in: path, required: true, schema: { type: string } }
+      - { $ref: "#/components/parameters/client" }
+    put:
+      summary: Change one runtime setting
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [value], properties: { value: { oneOf: [{ type: string }, { type: boolean }] } } }
+      responses:
+        "200":
+          description: Options after the change
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ConfigOption" } }
+        "400": { $ref: "#/components/responses/Error" }
+  /v1/sessions/{id}/inputs:
+    parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/client" }]
+    get:
+      summary: Questions from the runtime waiting for an answer
+      responses:
+        "200":
+          description: Input requests
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/InputRequest" } }
+  /v1/sessions/{session_id}/inputs/{input_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string } }
+      - { name: input_id, in: path, required: true, schema: { type: string } }
+      - { $ref: "#/components/parameters/client" }
+    post:
+      summary: Answer an input.required event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [accept, decline, cancel] }
+                content: { type: object, description: form answers, for action accept }
       responses:
         "200": { description: Answered }
         "400": { $ref: "#/components/responses/Error" }

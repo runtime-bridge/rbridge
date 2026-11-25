@@ -84,6 +84,12 @@ func NewHTTPHandler(api *API, o HTTPOptions) http.Handler {
 	route("POST /v1/sessions/{id}/cancel", "sessions.cancel", 200, pathID("id"))
 	route("GET /v1/sessions/{id}/approvals", "sessions.approvals", 200, pathID("id"))
 	route("POST /v1/sessions/{session_id}/approvals/{approval_id}", "approvals.answer", 200, pathID("session_id", "approval_id"))
+	route("GET /v1/sessions/{id}/modes", "sessions.modes", 200, pathID("id"))
+	route("PUT /v1/sessions/{id}/mode", "sessions.set_mode", 200, pathID("id"))
+	route("GET /v1/sessions/{id}/options", "sessions.options", 200, pathID("id"))
+	route("PUT /v1/sessions/{id}/options/{option_id}", "sessions.set_option", 200, pathID("id", "option_id"))
+	route("GET /v1/sessions/{id}/inputs", "sessions.inputs", 200, pathID("id"))
+	route("POST /v1/sessions/{session_id}/inputs/{input_id}", "inputs.answer", 200, pathID("session_id", "input_id"))
 	route("POST /v1/run", "run", 200, plain)
 	route("GET /v1/audit", "audit.list", 200, func(r *http.Request, _ json.RawMessage) (json.RawMessage, error) {
 		since := time.Time{}

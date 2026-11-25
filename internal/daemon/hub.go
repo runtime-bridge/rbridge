@@ -47,6 +47,8 @@ type live struct {
 	nextSub   int
 	pending   map[string]chan domain.ApprovalDecision
 	requests  map[string]domain.ApprovalRequest
+	inputs    map[string]domain.InputRequest
+	inputWait map[string]chan domain.InputResponse
 	busy      bool
 	cancel    context.CancelFunc
 	lastUsed  time.Time
@@ -102,6 +104,29 @@ func (l *live) Decide(ctx context.Context, req domain.ApprovalRequest) domain.Ap
 	}
 }
 
+// Ask parks a question from the runtime until the owning client answers it.
+func (l *live) Ask(ctx context.Context, req domain.InputRequest) domain.InputResponse {
+	ch := make(chan domain.InputResponse, 1)
+	l.mu.Lock()
+	l.inputs[req.ID] = req
+	l.inputWait[req.ID] = ch
+	l.mu.Unlock()
+	defer func() {
+		l.mu.Lock()
+		delete(l.inputs, req.ID)
+		delete(l.inputWait, req.ID)
+		l.mu.Unlock()
+	}()
+	select {
+	case r := <-ch:
+		return r
+	case <-ctx.Done():
+		return domain.InputResponse{Action: "cancel"}
+	case <-l.closedSig:
+		return domain.InputResponse{Action: "cancel"}
+	}
+}
+
 func (l *live) touch() {
 	l.mu.Lock()
 	l.lastUsed = l.hub.now()
@@ -112,9 +137,14 @@ func (l *live) touch() {
 type OpenRequest struct {
 	Task  domain.Task `json:"task"`
 	Model string      `json:"model,omitempty"`
+	// Mode is a runtime session mode to switch to once the session opens.
+	Mode string `json:"mode,omitempty"`
+	// Input says the client answers input.required events. Without it the
+	// runtime's questions are declined at once.
+	Input bool `json:"input,omitempty"`
 }
 
-func (h *Hub) register(owner string, open func(service.RunOptions) (*service.Session, error)) (*live, error) {
+func (h *Hub) register(owner string, input bool, open func(service.RunOptions) (*service.Session, error)) (*live, error) {
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
@@ -136,8 +166,13 @@ func (h *Hub) register(owner string, open func(service.RunOptions) (*service.Ses
 	l := &live{
 		hub: h, owner: owner, subs: map[int]chan domain.Event{}, pending: map[string]chan domain.ApprovalDecision{},
 		requests: map[string]domain.ApprovalRequest{}, lastUsed: h.now(), closedSig: make(chan struct{}),
+		inputs: map[string]domain.InputRequest{}, inputWait: map[string]chan domain.InputResponse{},
 	}
-	sess, err := open(service.RunOptions{Sink: l, Approver: l, Client: clientTag(owner)})
+	ro := service.RunOptions{Sink: l, Approver: l, Client: clientTag(owner)}
+	if input {
+		ro.Elicitor = l
+	}
+	sess, err := open(ro)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +188,8 @@ func (h *Hub) register(owner string, open func(service.RunOptions) (*service.Ses
 
 // Open starts a new session.
 func (h *Hub) Open(ctx context.Context, owner string, req OpenRequest) (domain.SessionRecord, error) {
-	l, err := h.register(owner, func(ro service.RunOptions) (*service.Session, error) {
-		ro.Model = req.Model
+	l, err := h.register(owner, req.Input, func(ro service.RunOptions) (*service.Session, error) {
+		ro.Model, ro.Mode = req.Model, req.Mode
 		return h.svc.OpenSession(ctx, req.Task, ro)
 	})
 	if err != nil {
@@ -164,7 +199,7 @@ func (h *Hub) Open(ctx context.Context, owner string, req OpenRequest) (domain.S
 }
 
 // Resume reopens a stored session owned by the client.
-func (h *Hub) Resume(ctx context.Context, owner, id, model string) (domain.SessionRecord, error) {
+func (h *Hub) Resume(ctx context.Context, owner, id, model string, input bool) (domain.SessionRecord, error) {
 	if _, err := h.get(owner, id); err == nil {
 		return domain.SessionRecord{}, domain.Errorf(domain.ErrInvalidInput, "session %s is already open", id)
 	}
@@ -172,7 +207,7 @@ func (h *Hub) Resume(ctx context.Context, owner, id, model string) (domain.Sessi
 	if err != nil || rec.Client != clientTag(owner) {
 		return domain.SessionRecord{}, domain.Errorf(domain.ErrSessionNotFound, "no session %q", id)
 	}
-	l, err := h.register(owner, func(ro service.RunOptions) (*service.Session, error) {
+	l, err := h.register(owner, input, func(ro service.RunOptions) (*service.Session, error) {
 		ro.Model = model
 		return h.svc.ResumeSession(ctx, id, ro)
 	})
@@ -282,6 +317,103 @@ func (h *Hub) Answer(owner, id, approvalID string, allow bool, optionID string, 
 	default:
 		return domain.Errorf(domain.ErrInvalidInput, "approval %q was already answered", approvalID)
 	}
+}
+
+// AnswerInput resolves a pending question from the runtime.
+func (h *Hub) AnswerInput(owner, id, inputID, action string, content map[string]any) error {
+	l, err := h.get(owner, id)
+	if err != nil {
+		return err
+	}
+	switch action {
+	case "accept", "decline", "cancel":
+	default:
+		return domain.Errorf(domain.ErrInvalidInput, "action must be accept, decline or cancel")
+	}
+	l.touch()
+	l.mu.Lock()
+	ch := l.inputWait[inputID]
+	l.mu.Unlock()
+	if ch == nil {
+		return domain.Errorf(domain.ErrInvalidInput, "input %q is not waiting for an answer", inputID)
+	}
+	select {
+	case ch <- domain.InputResponse{Action: action, Content: content}:
+		return nil
+	default:
+		return domain.Errorf(domain.ErrInvalidInput, "input %q was already answered", inputID)
+	}
+}
+
+// PendingInputs lists questions waiting for an answer.
+func (h *Hub) PendingInputs(owner, id string) ([]domain.InputRequest, error) {
+	l, err := h.get(owner, id)
+	if err != nil {
+		return nil, err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]domain.InputRequest, 0, len(l.inputs))
+	for _, r := range l.inputs {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// ModeState is the reply to a modes query.
+type ModeState struct {
+	Current string        `json:"current"`
+	Modes   []domain.Mode `json:"modes"`
+}
+
+// Modes returns a session's runtime modes.
+func (h *Hub) Modes(owner, id string) (ModeState, error) {
+	l, err := h.get(owner, id)
+	if err != nil {
+		return ModeState{}, err
+	}
+	cur, modes, err := l.sess.Modes()
+	if modes == nil {
+		modes = []domain.Mode{}
+	}
+	return ModeState{Current: cur, Modes: modes}, err
+}
+
+// SetMode switches a session's runtime mode.
+func (h *Hub) SetMode(ctx context.Context, owner, id, mode string) error {
+	l, err := h.get(owner, id)
+	if err != nil {
+		return err
+	}
+	l.touch()
+	return l.sess.SetMode(ctx, mode)
+}
+
+// Options returns a session's runtime settings.
+func (h *Hub) Options(owner, id string) ([]domain.ConfigOption, error) {
+	l, err := h.get(owner, id)
+	if err != nil {
+		return nil, err
+	}
+	opts, err := l.sess.ConfigOptions()
+	if opts == nil && err == nil {
+		opts = []domain.ConfigOption{}
+	}
+	return opts, err
+}
+
+// SetOption changes one runtime setting of a session.
+func (h *Hub) SetOption(ctx context.Context, owner, id, option, value string) ([]domain.ConfigOption, error) {
+	l, err := h.get(owner, id)
+	if err != nil {
+		return nil, err
+	}
+	l.touch()
+	if err := l.sess.SetConfigOption(ctx, option, value); err != nil {
+		return nil, err
+	}
+	return h.Options(owner, id)
 }
 
 func optionExists(r domain.ApprovalRequest, id string) bool {

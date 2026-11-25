@@ -444,3 +444,75 @@ func TestPerClientSessionLimit(t *testing.T) {
 	}
 	_ = ctx
 }
+
+func TestModesOptionsAndInputOverDaemon(t *testing.T) {
+	e := start(t, nil)
+	ctx := context.Background()
+	r, err := bridge.Connect(ctx, bridge.ConnectOptions{Socket: e.files.Socket, Client: "go-app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	s, err := r.Open(ctx, bridge.Task{Workspace: e.ws, Provider: "opencode"}, bridge.WithMode("code"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, modes, err := s.Modes(ctx)
+	if err != nil || cur != "code" || len(modes) != 2 {
+		t.Fatalf("modes %s %v %v", cur, modes, err)
+	}
+	if err := s.SetMode(ctx, "ask"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetOption(ctx, "model", "large"); err != nil {
+		t.Fatal(err)
+	}
+	opts, err := s.Options(ctx)
+	if err != nil || len(opts) != 1 || opts[0].Current != "large" {
+		t.Fatalf("options %+v %v", opts, err)
+	}
+	if res, err := s.Prompt(ctx, bridge.Text("mode?")); err != nil || res.Output != "mode: ask model: large" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	s.Close(ctx)
+
+	// Over HTTP: list modes and set an option.
+	resp, body := e.req("POST", "/v1/sessions", "web", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}, nil)
+	var rec domain.SessionRecord
+	json.Unmarshal(body, &rec)
+	if resp.StatusCode != 201 {
+		t.Fatalf("open %d %s", resp.StatusCode, body)
+	}
+	resp, body = e.req("PUT", "/v1/sessions/"+rec.ID+"/options/model", "web", map[string]any{"value": "large"}, nil)
+	if resp.StatusCode != 200 || !strings.Contains(string(body), `"current":"large"`) {
+		t.Fatalf("set option %d %s", resp.StatusCode, body)
+	}
+	resp, body = e.req("PUT", "/v1/sessions/"+rec.ID+"/mode", "web", map[string]any{"mode": "nope"}, nil)
+	if resp.StatusCode != 400 {
+		t.Fatalf("bad mode %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := e.req("GET", "/v1/sessions/"+rec.ID+"/modes", "other", nil, nil); resp.StatusCode != 404 {
+		t.Fatal("another client must not see the session")
+	}
+	e.req("DELETE", "/v1/sessions/"+rec.ID, "web", nil, nil)
+}
+
+func TestInputOverDaemon(t *testing.T) {
+	e := start(t, map[string]string{fakeacp.EnvScenario: "elicit"})
+	ctx := context.Background()
+	r, err := bridge.Connect(ctx, bridge.ConnectOptions{Socket: e.files.Socket})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	task := bridge.Task{Workspace: e.ws, Prompt: bridge.Text("x"), Provider: "opencode"}
+	res, err := r.Run(ctx, task, bridge.WithInput(func(_ context.Context, req bridge.InputRequest) bridge.InputResponse {
+		return bridge.InputResponse{Action: "accept", Content: map[string]any{"name": "Lin"}}
+	}))
+	if err != nil || res.Output != "hello Lin" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if res, err := r.Run(ctx, task); err != nil || res.Output != "declined" {
+		t.Fatalf("without a handler: %+v %v", res, err)
+	}
+}

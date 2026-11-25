@@ -53,6 +53,7 @@ type rpcReply struct {
 type remoteSub struct {
 	sink     domain.EventSink
 	approver domain.Approver
+	elicitor domain.Elicitor
 }
 
 // SocketPath returns the daemon socket for an RBRIDGE_HOME, or for the
@@ -192,6 +193,17 @@ func (r *Remote) notification(method string, params json.RawMessage) {
 	if sub.sink != nil {
 		sub.sink.Emit(p.Event)
 	}
+	if p.Event.Type == domain.EventInputRequired && sub.elicitor != nil {
+		var req domain.InputRequest
+		if json.Unmarshal(p.Event.Data, &req) == nil {
+			go func() {
+				resp := sub.elicitor.Ask(context.Background(), req)
+				_ = r.call(context.Background(), "inputs.answer", map[string]any{
+					"session_id": p.Event.SessionID, "input_id": req.ID, "action": resp.Action, "content": resp.Content,
+				}, nil)
+			}()
+		}
+	}
 	if p.Event.Type == domain.EventApprovalRequired {
 		var req domain.ApprovalRequest
 		if json.Unmarshal(p.Event.Data, &req) == nil {
@@ -269,7 +281,7 @@ func (r *Remote) Status(ctx context.Context) (daemon.Status, error) {
 
 func (r *Remote) attach(ctx context.Context, rec SessionRecord, ro service.RunOptions) (*Session, error) {
 	r.mu.Lock()
-	r.subs[rec.ID] = &remoteSub{sink: ro.Sink, approver: ro.Approver}
+	r.subs[rec.ID] = &remoteSub{sink: ro.Sink, approver: ro.Approver, elicitor: ro.Elicitor}
 	r.mu.Unlock()
 	if err := r.call(ctx, "sessions.subscribe", map[string]any{"id": rec.ID, "after": 0}, nil); err != nil {
 		return nil, err
@@ -284,7 +296,7 @@ func (r *Remote) Open(ctx context.Context, t Task, opts ...RunOption) (*Session,
 		t.Prompt = Text("session")
 	}
 	var rec SessionRecord
-	if err := r.call(ctx, "sessions.open", map[string]any{"task": t, "model": ro.Model}, &rec); err != nil {
+	if err := r.call(ctx, "sessions.open", map[string]any{"task": t, "model": ro.Model, "mode": ro.Mode, "input": ro.Elicitor != nil}, &rec); err != nil {
 		return nil, err
 	}
 	return r.attach(ctx, rec, ro)
@@ -294,7 +306,7 @@ func (r *Remote) Open(ctx context.Context, t Task, opts ...RunOption) (*Session,
 func (r *Remote) Resume(ctx context.Context, id string, opts ...RunOption) (*Session, error) {
 	ro := options(opts)
 	var rec SessionRecord
-	if err := r.call(ctx, "sessions.resume", map[string]any{"id": id, "model": ro.Model}, &rec); err != nil {
+	if err := r.call(ctx, "sessions.resume", map[string]any{"id": id, "model": ro.Model, "input": ro.Elicitor != nil}, &rec); err != nil {
 		return nil, err
 	}
 	return r.attach(ctx, rec, ro)
@@ -353,4 +365,23 @@ func (s *remoteSession) close(ctx context.Context) error {
 		return fmt.Errorf("close session: %w", err)
 	}
 	return nil
+}
+
+func (s *remoteSession) modes(ctx context.Context) (string, []Mode, error) {
+	var st daemon.ModeState
+	err := s.r.call(ctx, "sessions.modes", map[string]any{"id": s.rec.ID}, &st)
+	return st.Current, st.Modes, err
+}
+
+func (s *remoteSession) setMode(ctx context.Context, id string) error {
+	return s.r.call(ctx, "sessions.set_mode", map[string]any{"id": s.rec.ID, "mode": id}, nil)
+}
+
+func (s *remoteSession) options(ctx context.Context) ([]ConfigOption, error) {
+	var out []ConfigOption
+	return out, s.r.call(ctx, "sessions.options", map[string]any{"id": s.rec.ID}, &out)
+}
+
+func (s *remoteSession) setOption(ctx context.Context, id, value string) error {
+	return s.r.call(ctx, "sessions.set_option", map[string]any{"id": s.rec.ID, "option_id": id, "value": value}, nil)
 }

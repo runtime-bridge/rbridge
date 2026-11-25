@@ -30,8 +30,8 @@ Parameters and results are the same JSON objects as the HTTP API (`specs/http-ap
 | `skills.add` | `path` (absolute) or `url` + `rev` (+ `subdir`), `link` | add result |
 | `skills.trust` | `id`, `trust` | skill record |
 | `skills.remove` | `id` | `{"removed":true}` |
-| `sessions.open` | `task`, `model` | session record |
-| `sessions.resume` | `id`, `model` | session record |
+| `sessions.open` | `task`, `model`, `mode`, `input` | session record |
+| `sessions.resume` | `id`, `model`, `input` | session record |
 | `sessions.list` | none | this client's records |
 | `sessions.get` | `id` | record |
 | `sessions.subscribe` | `id`, `after` | `{"subscribed":true}`, then notifications |
@@ -40,7 +40,13 @@ Parameters and results are the same JSON objects as the HTTP API (`specs/http-ap
 | `sessions.cancel` | `id` | `{"cancelled":true}` |
 | `sessions.close` | `id` | `{"closed":true}` |
 | `sessions.approvals` | `id` | pending approval requests |
-| `approvals.answer` | `session_id`, `approval_id`, `allow` or `option_id` | `{"answered":true}` |
+| `approvals.answer` | `session_id`, `approval_id`, `allow` or `option_id`, `remember` | `{"answered":true}` |
+| `sessions.modes` | `id` | `{"current":...,"modes":[...]}` |
+| `sessions.set_mode` | `id`, `mode` | modes after the change |
+| `sessions.options` | `id` | runtime settings |
+| `sessions.set_option` | `id`, `option_id`, `value` (string or boolean) | settings after the change |
+| `sessions.inputs` | `id` | pending input requests |
+| `inputs.answer` | `session_id`, `input_id`, `action` (accept, decline, cancel), `content` | `{"answered":true}` |
 | `run` | `task`, `model` | result (open, one turn, close) |
 | `audit.list` | `since` (RFC 3339) | audit records |
 
@@ -54,7 +60,11 @@ After `sessions.subscribe`, the daemon sends every buffered event with a sequenc
 
 When the session closes the daemon sends `{"jsonrpc":"2.0","method":"session.end","params":{"id":"ses_..."}}`. A subscriber that falls more than 256 events behind is dropped; it can subscribe again with the last sequence number it saw.
 
-`approval.required` events carry an approval request (`id`, `title`, `kind`, `tool`, `options`). Answer with `approvals.answer`; a request nobody answers within `policy.approval_timeout` is denied. Requests the policy decides on its own produce only `approval.resolved`.
+`approval.required` events carry an approval request (`id`, `title`, `kind`, `tool`, `options`). Answer with `approvals.answer`; a request nobody answers within `policy.approval_timeout` is denied. Requests the policy decides on its own produce only `approval.resolved`. With `remember`, the same tool and kind is allowed for the rest of the session; it never overrides a policy denial.
+
+`input.required` events carry a question from the runtime (`id`, `message`, `mode` form or url, `schema` or `url`). They are sent only to sessions opened with `input: true`; other sessions have the runtime's questions declined at once. Answer with `inputs.answer`. rbridge never opens a URL itself. Every question ends with `input.resolved`.
+
+`sessions.modes` and `sessions.options` expose the native modes and settings of ACP runtimes. Claude Code sessions return `capability_unavailable`, because its permission modes could bypass policy; use profiles instead.
 
 ## Errors
 

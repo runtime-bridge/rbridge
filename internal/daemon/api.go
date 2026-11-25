@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -62,6 +63,25 @@ type idParams struct {
 	ID      string `json:"id"`
 	Refresh bool   `json:"refresh"`
 	Model   string `json:"model"`
+	Input   bool   `json:"input"`
+}
+
+type modeParams struct {
+	ID   string `json:"id"`
+	Mode string `json:"mode"`
+}
+
+type optionParams struct {
+	ID       string `json:"id"`
+	OptionID string `json:"option_id"`
+	Value    any    `json:"value"`
+}
+
+type inputParams struct {
+	SessionID string         `json:"session_id"`
+	InputID   string         `json:"input_id"`
+	Action    string         `json:"action"`
+	Content   map[string]any `json:"content"`
 }
 
 type promptParams struct {
@@ -182,7 +202,7 @@ func (a *API) Methods() map[string]Method {
 			if err := decode(p, &in); err != nil {
 				return nil, err
 			}
-			return a.Hub.Resume(ctx, owner, in.ID, in.Model)
+			return a.Hub.Resume(ctx, owner, in.ID, in.Model, in.Input)
 		},
 		"sessions.list": func(ctx context.Context, owner string, _ json.RawMessage) (any, error) {
 			return a.Hub.List(ctx, owner)
@@ -227,6 +247,60 @@ func (a *API) Methods() map[string]Method {
 				return nil, err
 			}
 			return a.Hub.Pending(owner, in.ID)
+		},
+		"sessions.modes": func(_ context.Context, owner string, p json.RawMessage) (any, error) {
+			var in idParams
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			return a.Hub.Modes(owner, in.ID)
+		},
+		"sessions.set_mode": func(ctx context.Context, owner string, p json.RawMessage) (any, error) {
+			var in modeParams
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			if err := a.Hub.SetMode(ctx, owner, in.ID, in.Mode); err != nil {
+				return nil, err
+			}
+			return a.Hub.Modes(owner, in.ID)
+		},
+		"sessions.options": func(_ context.Context, owner string, p json.RawMessage) (any, error) {
+			var in idParams
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			return a.Hub.Options(owner, in.ID)
+		},
+		"sessions.set_option": func(ctx context.Context, owner string, p json.RawMessage) (any, error) {
+			var in optionParams
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			var value string
+			switch v := in.Value.(type) {
+			case string:
+				value = v
+			case bool:
+				value = fmt.Sprint(v)
+			default:
+				return nil, domain.Errorf(domain.ErrInvalidInput, "value must be a string or a boolean")
+			}
+			return a.Hub.SetOption(ctx, owner, in.ID, in.OptionID, value)
+		},
+		"sessions.inputs": func(_ context.Context, owner string, p json.RawMessage) (any, error) {
+			var in idParams
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			return a.Hub.PendingInputs(owner, in.ID)
+		},
+		"inputs.answer": func(_ context.Context, owner string, p json.RawMessage) (any, error) {
+			var in inputParams
+			if err := decode(p, &in); err != nil {
+				return nil, err
+			}
+			return map[string]bool{"answered": true}, a.Hub.AnswerInput(owner, in.SessionID, in.InputID, in.Action, in.Content)
 		},
 		"approvals.answer": func(_ context.Context, owner string, p json.RawMessage) (any, error) {
 			var in answerParams

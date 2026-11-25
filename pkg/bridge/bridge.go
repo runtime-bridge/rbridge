@@ -44,6 +44,10 @@ type (
 	Error            = domain.Error
 	ErrorCode        = domain.ErrorCode
 	ProviderStatus   = service.ProviderStatus
+	Mode             = domain.Mode
+	ConfigOption     = domain.ConfigOption
+	InputRequest     = domain.InputRequest
+	InputResponse    = domain.InputResponse
 
 	TextData           = domain.TextData
 	ToolData           = domain.ToolData
@@ -86,6 +90,9 @@ const (
 	EventTurnCompleted    = domain.EventTurnCompleted
 	EventTurnFailed       = domain.EventTurnFailed
 	EventSessionClosed    = domain.EventSessionClosed
+	EventModeUpdated      = domain.EventModeUpdated
+	EventInputRequired    = domain.EventInputRequired
+	EventInputResolved    = domain.EventInputResolved
 )
 
 // Stop reasons and trust states.
@@ -206,6 +213,16 @@ func AllowAll() RunOption {
 // sessions set Task.Profile.
 func WithProfile(p string) RunOption { return func(o *service.RunOptions) { o.Profile = p } }
 
+// WithMode switches the runtime to a session mode, such as "code", once the
+// session opens. Runtimes list their modes in Session.Modes.
+func WithMode(m string) RunOption { return func(o *service.RunOptions) { o.Mode = m } }
+
+// WithInput answers questions the runtime asks the user, such as a form to
+// fill in. Without it those questions are declined.
+func WithInput(f func(context.Context, InputRequest) InputResponse) RunOption {
+	return func(o *service.RunOptions) { o.Elicitor = domain.ElicitorFunc(f) }
+}
+
 // WithModel passes a model name to the runtime.
 func WithModel(m string) RunOption { return func(o *service.RunOptions) { o.Model = m } }
 
@@ -241,6 +258,10 @@ type sessionImpl interface {
 	prompt(ctx context.Context, p []ContentBlock) (Result, error)
 	cancel(ctx context.Context) error
 	close(ctx context.Context) error
+	modes(ctx context.Context) (string, []Mode, error)
+	setMode(ctx context.Context, id string) error
+	options(ctx context.Context) ([]ConfigOption, error)
+	setOption(ctx context.Context, id, value string) error
 }
 
 // Session is a multi-turn conversation with one runtime.
@@ -254,6 +275,14 @@ func (l localSession) cancel(ctx context.Context) error { return l.s.Cancel(ctx)
 func (l localSession) close(ctx context.Context) error  { return l.s.Close(ctx) }
 func (l localSession) prompt(ctx context.Context, p []ContentBlock) (Result, error) {
 	return l.s.Prompt(ctx, p)
+}
+func (l localSession) modes(context.Context) (string, []Mode, error) { return l.s.Modes() }
+func (l localSession) setMode(ctx context.Context, id string) error  { return l.s.SetMode(ctx, id) }
+func (l localSession) options(context.Context) ([]ConfigOption, error) {
+	return l.s.ConfigOptions()
+}
+func (l localSession) setOption(ctx context.Context, id, value string) error {
+	return l.s.SetConfigOption(ctx, id, value)
 }
 
 // Open starts a session. Task.Prompt is not sent; call Prompt for each turn.
@@ -297,6 +326,22 @@ func (s *Session) Cancel(ctx context.Context) error { return s.impl.cancel(ctx) 
 
 // Close ends the session and stops the runtime.
 func (s *Session) Close(ctx context.Context) error { return s.impl.close(ctx) }
+
+// Modes returns the runtime's current session mode and the modes it offers.
+// Runtimes without modes return ErrCapabilityUnavailable.
+func (s *Session) Modes(ctx context.Context) (string, []Mode, error) { return s.impl.modes(ctx) }
+
+// SetMode switches the runtime's session mode.
+func (s *Session) SetMode(ctx context.Context, id string) error { return s.impl.setMode(ctx, id) }
+
+// Options returns the runtime's session settings, such as its model.
+func (s *Session) Options(ctx context.Context) ([]ConfigOption, error) { return s.impl.options(ctx) }
+
+// SetOption changes one runtime session setting. Boolean options take
+// "true" or "false".
+func (s *Session) SetOption(ctx context.Context, id, value string) error {
+	return s.impl.setOption(ctx, id, value)
+}
 
 // Sessions lists stored sessions, newest first.
 func (b *Bridge) Sessions(ctx context.Context) ([]SessionRecord, error) { return b.svc.Sessions(ctx) }
