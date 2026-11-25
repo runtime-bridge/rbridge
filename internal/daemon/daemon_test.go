@@ -17,16 +17,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/daemon"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/process"
-	"github.com/rbridge/rbridge/internal/providers/detect"
-	"github.com/rbridge/rbridge/internal/providers/fakeacp"
-	"github.com/rbridge/rbridge/internal/providers/fakeclaude"
-	"github.com/rbridge/rbridge/internal/service"
-	"github.com/rbridge/rbridge/internal/store"
-	"github.com/rbridge/rbridge/pkg/bridge"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/daemon"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/providers/detect"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeclaude"
+	"github.com/runtime-bridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/internal/store"
+	"github.com/runtime-bridge/rbridge/pkg/bridge"
 )
 
 func TestMain(m *testing.M) {

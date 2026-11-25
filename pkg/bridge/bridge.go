@@ -19,10 +19,10 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/service"
-	skillreg "github.com/rbridge/rbridge/internal/skills/registry"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/service"
+	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
 )
 
 type (

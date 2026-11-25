@@ -10,10 +10,10 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/buildinfo"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/service"
-	skillreg "github.com/rbridge/rbridge/internal/skills/registry"
+	"github.com/runtime-bridge/rbridge/internal/buildinfo"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/service"
+	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
 )
 
 // API is the method set shared by every transport.

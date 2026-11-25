@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/skills/spec"
-	"github.com/rbridge/rbridge/internal/store"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/skills/spec"
+	"github.com/runtime-bridge/rbridge/internal/store"
 )
 
 func newReg(t *testing.T) *Registry {

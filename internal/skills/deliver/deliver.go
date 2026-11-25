@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/skills/registry"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/skills/registry"
 )
 
 // Strategy names how a runtime is given per-session skills.

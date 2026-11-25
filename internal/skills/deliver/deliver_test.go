@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 func skill(t *testing.T, name string) Item {

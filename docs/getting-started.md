@@ -5,10 +5,10 @@ This walk-through takes about ten minutes. You need one agent runtime installed 
 ## 1. Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rbridge/rbridge/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runtime-bridge/rbridge/main/scripts/install.sh | sh
 ```
 
-The script checks the archive against the release's checksums (and its cosign signature if `cosign` is installed) before writing `~/.local/bin/rbridge`. With Go 1.25 or later you can instead run `go install github.com/rbridge/rbridge/cmd/rbridge@latest`.
+The script checks the archive against the release's checksums (and its cosign signature if `cosign` is installed) before writing `~/.local/bin/rbridge`. With Go 1.25 or later you can instead run `go install github.com/runtime-bridge/rbridge/cmd/rbridge@latest`.
 
 ## 2. Check what rbridge finds
 
@@ -65,7 +65,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/rbridge/rbridge/pkg/bridge"
+	"github.com/runtime-bridge/rbridge/pkg/bridge"
 )
 
 func main() {

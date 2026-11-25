@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/process"
-	"github.com/rbridge/rbridge/internal/providers/registry"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/providers/registry"
 )
 
 // FS is the filesystem access detection needs. Tests replace it to record

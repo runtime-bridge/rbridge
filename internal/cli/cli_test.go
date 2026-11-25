@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rbridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/internal/service"
 )
 
 type run struct {

@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/process"
-	"github.com/rbridge/rbridge/internal/providers/detect"
-	"github.com/rbridge/rbridge/internal/store"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/providers/detect"
+	"github.com/runtime-bridge/rbridge/internal/store"
 )
 
 type harness struct {

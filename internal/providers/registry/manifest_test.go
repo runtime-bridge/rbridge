@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 func ids(r *Registry) []string {

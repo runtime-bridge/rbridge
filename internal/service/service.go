@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/process"
-	"github.com/rbridge/rbridge/internal/providers/accounts"
-	"github.com/rbridge/rbridge/internal/providers/detect"
-	"github.com/rbridge/rbridge/internal/providers/registry"
-	skillreg "github.com/rbridge/rbridge/internal/skills/registry"
-	"github.com/rbridge/rbridge/internal/skills/spec"
-	"github.com/rbridge/rbridge/internal/store"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/providers/accounts"
+	"github.com/runtime-bridge/rbridge/internal/providers/detect"
+	"github.com/runtime-bridge/rbridge/internal/providers/registry"
+	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
+	"github.com/runtime-bridge/rbridge/internal/skills/spec"
+	"github.com/runtime-bridge/rbridge/internal/store"
 )
 
 // Service is the entry point for every interface.

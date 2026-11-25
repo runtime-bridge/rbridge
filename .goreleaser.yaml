@@ -16,7 +16,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X github.com/rbridge/rbridge/internal/buildinfo.Version={{ .Version }}
+      - -s -w -X github.com/runtime-bridge/rbridge/internal/buildinfo.Version={{ .Version }}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 

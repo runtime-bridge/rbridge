@@ -1,4 +1,4 @@
-module github.com/rbridge/rbridge
+module github.com/runtime-bridge/rbridge
 
 go 1.25.0
 

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 func req(kind string, input map[string]any) domain.ApprovalRequest {

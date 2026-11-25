@@ -13,4 +13,4 @@
 4. Tag and push: `git tag -s vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. The release workflow builds the six platform archives with GoReleaser, writes `checksums.txt` and signs it with cosign (keyless, GitHub OIDC).
 5. Check the release page, then run `scripts/install.sh vX.Y.Z` on a clean machine.
 
-Homebrew and Scoop packages need two more repositories (`rbridge/homebrew-tap`, `rbridge/scoop-bucket`) and a token secret; they are not set up yet.
+Homebrew and Scoop packages need two more repositories (`runtime-bridge/homebrew-tap`, `runtime-bridge/scoop-bucket`) and a token secret; they are not set up yet.

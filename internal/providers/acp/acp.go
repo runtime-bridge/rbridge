@@ -19,8 +19,8 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/process"
 )
 
 // Launch is how to start the agent process.

@@ -8,8 +8,8 @@ import (
 	"net"
 	"sync"
 
-	"github.com/rbridge/rbridge/internal/buildinfo"
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/buildinfo"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 // IPCProtocolVersion is the version of the IPC protocol in specs/ipc-protocol.md.

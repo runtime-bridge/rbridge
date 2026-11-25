@@ -30,4 +30,4 @@ First release: the CLI and the Go library.
 - Skill library with digests, trust states, Git sources pinned to a commit, and per-session delivery; `skills`.
 - Policy profiles `observe`, `standard`, `controlled` and `custom`, with an enforcement report per session and approvals that time out to deny.
 - Audit log with one record per session; `audit`.
-- Go library `github.com/rbridge/rbridge/pkg/bridge`.
+- Go library `github.com/runtime-bridge/rbridge/pkg/bridge`.

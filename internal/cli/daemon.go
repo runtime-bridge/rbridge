@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/daemon"
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/daemon"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 func cmdDaemon(ctx context.Context, args []string, env Env) error {

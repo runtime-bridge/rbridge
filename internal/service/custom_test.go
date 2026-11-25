@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/providers/acp"
-	"github.com/rbridge/rbridge/internal/providers/contract"
-	"github.com/rbridge/rbridge/internal/providers/fakeacp"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/providers/acp"
+	"github.com/runtime-bridge/rbridge/internal/providers/contract"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
 )
 
 // buildFakeAgent compiles the standalone fake agent once per test binary.
@@ -24,7 +24,7 @@ func buildFakeAgent(t *testing.T) string {
 		t.Skip("go toolchain not on PATH")
 	}
 	out := filepath.Join(t.TempDir(), "my-agent")
-	cmd := exec.Command("go", "build", "-o", out, "github.com/rbridge/rbridge/internal/tools/fakeagent")
+	cmd := exec.Command("go", "build", "-o", out, "github.com/runtime-bridge/rbridge/internal/tools/fakeagent")
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build fake agent: %v %s", err, b)
 	}

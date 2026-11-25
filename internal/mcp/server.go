@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/buildinfo"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/internal/buildinfo"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/service"
 )
 
 // Supported MCP protocol versions, newest first.

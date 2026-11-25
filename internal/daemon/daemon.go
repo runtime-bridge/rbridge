@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/buildinfo"
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/internal/buildinfo"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/service"
 )
 
 // State is written to daemon.json while the daemon runs.

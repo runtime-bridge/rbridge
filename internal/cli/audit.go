@@ -7,8 +7,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/audit"
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/audit"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 func cmdAudit(ctx context.Context, args []string, env Env) error {

@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/process"
-	"github.com/rbridge/rbridge/internal/providers/detect"
-	"github.com/rbridge/rbridge/internal/providers/fakeacp"
-	"github.com/rbridge/rbridge/internal/providers/fakeclaude"
-	"github.com/rbridge/rbridge/internal/skills/registry"
-	"github.com/rbridge/rbridge/internal/store"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/providers/detect"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeclaude"
+	"github.com/runtime-bridge/rbridge/internal/skills/registry"
+	"github.com/runtime-bridge/rbridge/internal/store"
 )
 
 func TestMain(m *testing.M) {

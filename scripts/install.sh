@@ -5,7 +5,7 @@
 # cosign signature when cosign is installed.
 set -eu
 
-repo="rbridge/rbridge"
+repo="runtime-bridge/rbridge"
 dir="${RBRIDGE_INSTALL_DIR:-$HOME/.local/bin}"
 version="${1:-}"
 

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/audit"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/policy"
+	"github.com/runtime-bridge/rbridge/internal/audit"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/policy"
 )
 
 // profile returns a built-in or the configured custom profile.

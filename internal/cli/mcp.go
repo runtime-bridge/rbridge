@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"github.com/rbridge/rbridge/internal/mcp"
+	"github.com/runtime-bridge/rbridge/internal/mcp"
 )
 
 func cmdMCP(ctx context.Context, args []string, env Env) error {

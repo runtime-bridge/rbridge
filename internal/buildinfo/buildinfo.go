@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 )
 
-// Version is set at build time with -ldflags "-X github.com/rbridge/rbridge/internal/buildinfo.Version=v0.1.0".
+// Version is set at build time with -ldflags "-X github.com/runtime-bridge/rbridge/internal/buildinfo.Version=v0.1.0".
 var Version = ""
 
 // Info describes the build.

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rbridge/rbridge/internal/providers/fakeacp"
-	"github.com/rbridge/rbridge/internal/providers/fakeclaude"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeclaude"
 )
 
 func TestMain(m *testing.M) {

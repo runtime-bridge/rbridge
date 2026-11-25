@@ -6,7 +6,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/rbridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/config"
 )
 
 func cmdConfig(_ context.Context, args []string, env Env) error {

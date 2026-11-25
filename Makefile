@@ -1,6 +1,6 @@
 STATICCHECK_VERSION := v0.8.2
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/rbridge/rbridge/internal/buildinfo.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/runtime-bridge/rbridge/internal/buildinfo.Version=$(VERSION)
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .PHONY: all build fakeagent test race cover vet fmt fmt-check staticcheck lint licenses cross bench compat clean

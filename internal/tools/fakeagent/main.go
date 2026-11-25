@@ -3,6 +3,6 @@
 // behaviour with RBRIDGE_FAKE_ACP_SCENARIO.
 package main
 
-import "github.com/rbridge/rbridge/internal/providers/fakeacp"
+import "github.com/runtime-bridge/rbridge/internal/providers/fakeacp"
 
 func main() { fakeacp.Main() }

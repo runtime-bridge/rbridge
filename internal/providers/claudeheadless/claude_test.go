@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/providers/contract"
-	"github.com/rbridge/rbridge/internal/providers/fakeclaude"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/providers/contract"
+	"github.com/runtime-bridge/rbridge/internal/providers/fakeclaude"
 )
 
 func TestMain(m *testing.M) {

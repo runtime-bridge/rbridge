@@ -12,7 +12,7 @@ Early development, not tagged yet. What works today:
 - `rbridge run` and `rbridge chat` hand a task to Claude Code or OpenCode, stream the work as it happens, ask you before the runtime does something that needs permission, and stop cleanly on Ctrl+C.
 - `rbridge skills` keeps a library of Agent Skills with a digest and a trust state for each, and delivers them to a session without touching your project or your own skill folders.
 - `rbridge sessions` lists, shows, resumes and cancels sessions.
-- `github.com/rbridge/rbridge/pkg/bridge` does the same from Go code, in your own process.
+- `github.com/runtime-bridge/rbridge/pkg/bridge` does the same from Go code, in your own process.
 
 - Policy profiles decide what a runtime may do, and `rbridge audit` keeps one record per session.
 
@@ -23,10 +23,10 @@ More runtimes and SDKs for other languages come next. See the roadmap below.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rbridge/rbridge/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runtime-bridge/rbridge/main/scripts/install.sh | sh
 ```
 
-The script verifies the release checksum (and the cosign signature when cosign is installed) before installing to `~/.local/bin`. With Go 1.25 or later: `go install github.com/rbridge/rbridge/cmd/rbridge@latest`.
+The script verifies the release checksum (and the cosign signature when cosign is installed) before installing to `~/.local/bin`. With Go 1.25 or later: `go install github.com/runtime-bridge/rbridge/cmd/rbridge@latest`.
 
 New here? Follow [docs/getting-started.md](docs/getting-started.md). Reference: [configuration](docs/configuration.md), [threat model](docs/threat-model.md), [performance](docs/performance.md), [releasing](docs/releasing.md).
 
@@ -137,7 +137,7 @@ The HTTP API listens on 127.0.0.1 only, needs the token from `daemon.token` in t
 | Claude ACP adapter | ACP through `claude-agent-acp` | API key or cloud provider only |
 | Any ACP agent | ACP, declared in config | Capabilities come from the agent's handshake |
 
-SDKs for other languages: [rbridge-sdk-ts](https://github.com/rbridge/rbridge-sdk-ts) (Node.js) and [rbridge-sdk-python](https://github.com/rbridge/rbridge-sdk-python). Other agents can use rbridge as an MCP server: `rbridge mcp`.
+SDKs for other languages: [rbridge-sdk-ts](https://github.com/runtime-bridge/rbridge-sdk-ts) (Node.js) and [rbridge-sdk-python](https://github.com/runtime-bridge/rbridge-sdk-python). Other agents can use rbridge as an MCP server: `rbridge mcp`.
 
 rbridge never bundles, installs or modifies a runtime, and never offers a provider's login. If you set an API key for a runtime (for example `ANTHROPIC_API_KEY`), that runtime bills it as usual; rbridge reports the mode as `api-key`.
 

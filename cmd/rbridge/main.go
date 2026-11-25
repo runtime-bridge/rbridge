@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/rbridge/rbridge/internal/cli"
+	"github.com/runtime-bridge/rbridge/internal/cli"
 )
 
 func main() {

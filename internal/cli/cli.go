@@ -13,10 +13,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/rbridge/rbridge/internal/buildinfo"
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/internal/buildinfo"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/service"
 )
 
 // Env is the process environment the CLI runs in. Tests supply their own.

@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/config"
-	"github.com/rbridge/rbridge/internal/daemon"
-	"github.com/rbridge/rbridge/internal/service"
-	"github.com/rbridge/rbridge/pkg/bridge"
+	"github.com/runtime-bridge/rbridge/internal/config"
+	"github.com/runtime-bridge/rbridge/internal/daemon"
+	"github.com/runtime-bridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/pkg/bridge"
 )
 
 func providers() []string {

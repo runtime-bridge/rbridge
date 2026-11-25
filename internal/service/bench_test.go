@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/policy"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/policy"
 )
 
 func newBenchSequencer() *sequencer {

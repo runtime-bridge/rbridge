@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/process"
-	"github.com/rbridge/rbridge/internal/skills/spec"
-	"github.com/rbridge/rbridge/internal/store"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/skills/spec"
+	"github.com/runtime-bridge/rbridge/internal/store"
 )
 
 const collection = "skills"

@@ -11,7 +11,7 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 // client serves the requests an ACP agent sends to rbridge.

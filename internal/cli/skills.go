@@ -8,10 +8,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/rbridge/rbridge/internal/domain"
-	"github.com/rbridge/rbridge/internal/skills/deliver"
-	skillreg "github.com/rbridge/rbridge/internal/skills/registry"
-	"github.com/rbridge/rbridge/internal/skills/spec"
+	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/skills/deliver"
+	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
+	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 )
 
 func cmdSkills(ctx context.Context, args []string, env Env) error {

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 // Opener starts a session of the adapter under test against its fake runtime

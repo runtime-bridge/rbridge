@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rbridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/domain"
 )
 
 // HTTPOptions configure the HTTP handler.
