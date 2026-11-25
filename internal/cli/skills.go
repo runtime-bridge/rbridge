@@ -119,69 +119,191 @@ func shortDigest(d string) string {
 func skillsAdd(ctx context.Context, args []string, env Env) error {
 	fs := newFlags("skills add", env)
 	rev := fs.String("rev", "", "Git revision (a full commit hash unless pinning is turned off)")
-	subdir := fs.String("subdir", "", "skill directory inside the Git repository")
-	link := fs.Bool("link", false, "use a local directory in place instead of copying it")
-	trust := fs.String("trust", "", "set a trust state right after adding (for skills you wrote yourself)")
+	var subdirs, only, exclude listFlag
+	fs.Var(&subdirs, "subdir", "folder inside the Git repository, a skill or a folder of skills; repeatable (default: the whole repository)")
+	fs.Var(&only, "only", "add only the skills with these names or patterns, such as metric-*; repeatable or comma-separated")
+	fs.Var(&exclude, "exclude", "leave out the skills with these names or patterns; repeatable or comma-separated")
+	dryRun := fs.Bool("dry-run", false, "show what would be added without adding anything")
+	link := fs.Bool("link", false, "use local folders in place instead of copying them")
+	trust := fs.String("trust", "", "set a trust state on every skill added (for skills you wrote or reviewed)")
 	fromCatalog := fs.Bool("catalog", false, "the argument is a catalog skill, as catalog:id or id")
 	asJSON := fs.Bool("json", false, "print JSON")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills add <dir | git-url --rev COMMIT [--subdir DIR] | --catalog [catalog:]id>")
+	usage := "usage: rbridge skills add <folder>... | <git-url> --rev COMMIT [--subdir DIR]... | --catalog [catalog:]id  [--only NAMES] [--exclude NAMES] [--trust STATE] [--dry-run]"
+	if len(pos) == 0 {
+		return domain.Errorf(domain.ErrInvalidInput, "%s", usage)
 	}
-	src := pos[0]
-	req := skillreg.AddRequest{Link: *link, Rev: *rev, Subdir: *subdir}
-	if strings.Contains(src, "://") || strings.HasPrefix(src, "git@") {
-		req.URL = src
-	} else {
-		if !filepath.IsAbs(src) {
-			src = filepath.Join(env.Dir, src)
+	var state domain.TrustState
+	if *trust != "" {
+		if state, err = skillreg.ParseTrust(*trust); err != nil {
+			return err
 		}
-		req.Path = src
 	}
 	svc, err := newService(env)
 	if err != nil {
 		return err
 	}
 	reg := svc.Skills()
-	var res skillreg.AddResult
 	if *fromCatalog {
-		res, err = svc.AddFromCatalog(ctx, pos[0])
-	} else {
-		res, err = reg.Add(ctx, req)
-	}
-	if err != nil {
-		return err
-	}
-	if *trust != "" {
-		state, err := skillreg.ParseTrust(*trust)
+		if len(pos) != 1 {
+			return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills add --catalog [catalog:]id")
+		}
+		res, err := svc.AddFromCatalog(ctx, pos[0])
 		if err != nil {
 			return err
 		}
-		if res.Record, err = reg.SetTrust(ctx, res.Record.ID, state); err != nil {
-			return err
+		if state != "" {
+			if res.Record, err = svc.SetSkillTrust(ctx, res.Record.ID, state); err != nil {
+				return err
+			}
+		}
+		if *asJSON {
+			return writeJSON(env.Stdout, res)
+		}
+		printAdded(env, skillreg.AddManyItem{ID: res.Record.ID, Status: statusOf(res), Result: &res})
+		printReviewHint(env, []string{res.Record.ID}, res.Record.Trust)
+		return nil
+	}
+
+	req := skillreg.AddManyRequest{Link: *link, Rev: *rev, Subdirs: subdirs, Only: only, Exclude: exclude, DryRun: *dryRun}
+	isGit := func(s string) bool { return strings.Contains(s, "://") || strings.HasPrefix(s, "git@") }
+	if isGit(pos[0]) {
+		if len(pos) != 1 {
+			return domain.Errorf(domain.ErrInvalidInput, "give one Git URL per command; use --subdir for several folders inside it")
+		}
+		req.URL = pos[0]
+	} else {
+		if len(subdirs) > 0 {
+			return domain.Errorf(domain.ErrInvalidInput, "--subdir is for a Git repository; for local folders, name each folder")
+		}
+		for _, p := range pos {
+			if isGit(p) {
+				return domain.Errorf(domain.ErrInvalidInput, "give local folders or a Git URL, not both")
+			}
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(env.Dir, p)
+			}
+			req.Paths = append(req.Paths, p)
 		}
 	}
+	if state != "" {
+		req.SetTrust = func(ctx context.Context, id string) (domain.SkillRecord, error) {
+			return svc.SetSkillTrust(ctx, id, state)
+		}
+	}
+	out, err := reg.AddMany(ctx, req)
+	if err != nil {
+		return err
+	}
 	if *asJSON {
-		return writeJSON(env.Stdout, res)
+		// One skill named directly keeps the single-skill shape scripts rely on.
+		if single := singleSkill(req, out); single != nil {
+			if err := writeJSON(env.Stdout, single); err != nil {
+				return err
+			}
+		} else if err := writeJSON(env.Stdout, out); err != nil {
+			return err
+		}
+	} else {
+		var unreviewed []string
+		for _, it := range out.Items {
+			printAdded(env, it)
+			if it.Result != nil && it.Result.Record.Trust == domain.TrustUnreviewed {
+				unreviewed = append(unreviewed, it.ID)
+			}
+		}
+		for _, w := range out.Warnings {
+			fmt.Fprintf(env.Stderr, "[warn] %s\n", w)
+		}
+		if len(out.Items) > 1 {
+			fmt.Fprintln(env.Stdout, addSummary(out))
+		}
+		printReviewHint(env, unreviewed, domain.TrustUnreviewed)
+		if *dryRun {
+			fmt.Fprintln(env.Stdout, "dry run: nothing was added")
+		}
 	}
-	switch {
-	case res.Unchanged:
-		fmt.Fprintf(env.Stdout, "%s is already installed with the same content (trust %s)\n", res.Record.ID, res.Record.Trust)
-	case res.Replaced != "":
-		fmt.Fprintf(env.Stdout, "updated %s (%s, was %s); trust reset to %s\n", res.Record.ID, shortDigest(res.Record.Digest), shortDigest(res.Replaced), res.Record.Trust)
-	default:
-		fmt.Fprintf(env.Stdout, "added %s (%s), trust %s\n", res.Record.ID, shortDigest(res.Record.Digest), res.Record.Trust)
-	}
-	for _, w := range res.Warnings {
-		fmt.Fprintf(env.Stderr, "[warn] %s\n", w)
-	}
-	if res.Record.Trust == domain.TrustUnreviewed {
-		fmt.Fprintf(env.Stdout, "review it with: rbridge skills show %s, then: rbridge skills trust %s reviewed\n", res.Record.ID, res.Record.ID)
+	if n := out.Failed(); n > 0 {
+		return domain.Errorf(domain.ErrSkillInvalid, "%d of %d skills could not be added", n, len(out.Items))
 	}
 	return nil
+}
+
+func statusOf(res skillreg.AddResult) string {
+	switch {
+	case res.Unchanged:
+		return "unchanged"
+	case res.Replaced != "":
+		return "updated"
+	}
+	return "added"
+}
+
+func singleSkill(req skillreg.AddManyRequest, out skillreg.AddManyResult) *skillreg.AddResult {
+	if req.DryRun || len(req.Only) > 0 || len(req.Exclude) > 0 || len(out.Items) != 1 || out.Items[0].Result == nil {
+		return nil
+	}
+	it := out.Items[0]
+	switch {
+	case req.URL != "" && len(req.Subdirs) <= 1 && it.Source == strings.Join(req.Subdirs, ""):
+	case req.URL != "" && len(req.Subdirs) == 0 && it.Source == "the root":
+	case req.URL == "" && len(req.Paths) == 1 && filepath.Clean(req.Paths[0]) == it.Source:
+	default:
+		return nil
+	}
+	return it.Result
+}
+
+func printAdded(env Env, it skillreg.AddManyItem) {
+	switch it.Status {
+	case "unchanged":
+		fmt.Fprintf(env.Stdout, "%s is already installed with the same content (trust %s)\n", it.ID, it.Result.Record.Trust)
+	case "updated":
+		fmt.Fprintf(env.Stdout, "updated %s (%s, was %s); trust reset to %s\n", it.ID, shortDigest(it.Result.Record.Digest), shortDigest(it.Result.Replaced), it.Result.Record.Trust)
+	case "added":
+		fmt.Fprintf(env.Stdout, "added %s (%s), trust %s\n", it.ID, shortDigest(it.Result.Record.Digest), it.Result.Record.Trust)
+	case "would_add":
+		fmt.Fprintf(env.Stdout, "would add %s from %s\n", it.ID, it.Source)
+	case "skipped":
+		if it.Reason != "not named by --only" {
+			fmt.Fprintf(env.Stdout, "skipped %s (%s)\n", it.ID, it.Reason)
+		}
+	case "failed":
+		fmt.Fprintf(env.Stderr, "[error] %s (%s): %s\n", it.ID, it.Source, it.Reason)
+	}
+	if it.Result != nil {
+		for _, w := range it.Result.Warnings {
+			fmt.Fprintf(env.Stderr, "[warn] %s: %s\n", it.ID, w)
+		}
+	}
+}
+
+func printReviewHint(env Env, ids []string, trust domain.TrustState) {
+	if len(ids) == 0 || trust != domain.TrustUnreviewed {
+		return
+	}
+	if len(ids) == 1 {
+		fmt.Fprintf(env.Stdout, "review it with: rbridge skills show %s, then: rbridge skills trust %s reviewed\n", ids[0], ids[0])
+		return
+	}
+	fmt.Fprintf(env.Stdout, "review them with: rbridge skills show <id>, then: rbridge skills trust %s reviewed\n", strings.Join(ids, " "))
+}
+
+func addSummary(out skillreg.AddManyResult) string {
+	counts := map[string]int{}
+	for _, it := range out.Items {
+		counts[it.Status]++
+	}
+	var parts []string
+	for _, s := range []string{"added", "updated", "unchanged", "would_add", "skipped", "failed"} {
+		if counts[s] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", counts[s], strings.ReplaceAll(s, "_", " ")))
+		}
+	}
+	return fmt.Sprintf("%d skills found: %s", len(out.Items), strings.Join(parts, ", "))
 }
 
 func skillsShow(ctx context.Context, args []string, env Env) error {
@@ -277,10 +399,10 @@ func skillsTrust(ctx context.Context, args []string, env Env) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) != 2 {
-		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills trust <id> unreviewed|reviewed|trusted|restricted|blocked")
+	if len(pos) < 2 {
+		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills trust <id or pattern>... unreviewed|reviewed|trusted|restricted|blocked")
 	}
-	state, err := skillreg.ParseTrust(pos[1])
+	state, err := skillreg.ParseTrust(pos[len(pos)-1])
 	if err != nil {
 		return err
 	}
@@ -288,12 +410,32 @@ func skillsTrust(ctx context.Context, args []string, env Env) error {
 	if err != nil {
 		return err
 	}
-	rec, err := svc.SetSkillTrust(ctx, pos[0], state)
+	ids, err := matchInstalled(ctx, svc, pos[:len(pos)-1])
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(env.Stdout, "%s is now %s\n", rec.ID, rec.Trust)
+	for _, id := range ids {
+		rec, err := svc.SetSkillTrust(ctx, id, state)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "%s is now %s\n", rec.ID, rec.Trust)
+	}
 	return nil
+}
+
+// matchInstalled resolves skill ids and patterns such as metric-* against
+// the library; a name or pattern that matches nothing is an error.
+func matchInstalled(ctx context.Context, svc *service.Service, patterns []string) ([]string, error) {
+	list, err := svc.Skills().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for _, r := range list {
+		ids = append(ids, r.ID)
+	}
+	return skillreg.MatchIDs(ids, patterns)
 }
 
 func skillsVerify(ctx context.Context, args []string, env Env) error {
@@ -341,17 +483,23 @@ func skillsRemove(ctx context.Context, args []string, env Env) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills remove <id>")
+	if len(pos) == 0 {
+		return domain.Errorf(domain.ErrInvalidInput, "usage: rbridge skills remove <id or pattern>...")
 	}
 	svc, err := newService(env)
 	if err != nil {
 		return err
 	}
-	if err := svc.RemoveSkill(ctx, pos[0]); err != nil {
+	ids, err := matchInstalled(ctx, svc, pos)
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(env.Stdout, "removed %s\n", pos[0])
+	for _, id := range ids {
+		if err := svc.RemoveSkill(ctx, id); err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "removed %s\n", id)
+	}
 	return nil
 }
 

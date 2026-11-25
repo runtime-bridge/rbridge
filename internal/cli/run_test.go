@@ -375,3 +375,36 @@ func TestSkillsShowCompatibility(t *testing.T) {
 		t.Fatalf("after: %s", r.stdout)
 	}
 }
+
+func TestSkillsAddManyAndPatterns(t *testing.T) {
+	f := newFakeCLI(t)
+	root := t.TempDir()
+	for _, name := range []string{"evidence-rules", "metric-discovery", "metric-verification"} {
+		src := writeSkill(t, name)
+		if err := os.Rename(src, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r := f.run("", "skills", "add", root, "--exclude", "metric-*", "--dry-run"); r.code != 0 || !strings.Contains(r.stdout, "would add evidence-rules") || !strings.Contains(r.stdout, "skipped metric-discovery") {
+		t.Fatalf("dry run: %+v", r)
+	}
+	if r := f.run("", "skills", "list"); !strings.Contains(r.stdout, "no skills yet") {
+		t.Fatalf("dry run installed something: %s", r.stdout)
+	}
+	if r := f.run("", "skills", "add", root, "--only", "nosuch"); r.code == 0 {
+		t.Fatal("an --only that names nothing should fail")
+	}
+	r := f.run("", "skills", "add", root)
+	if r.code != 0 || !strings.Contains(r.stdout, "3 skills found: 3 added") || !strings.Contains(r.stdout, "skills trust evidence-rules metric-discovery metric-verification reviewed") {
+		t.Fatalf("add all: %+v", r)
+	}
+	if r := f.run("", "skills", "trust", "metric-*", "evidence-rules", "reviewed"); r.code != 0 || strings.Count(r.stdout, "is now reviewed") != 3 {
+		t.Fatalf("trust: %+v", r)
+	}
+	if r := f.run("", "skills", "trust", "nosuch", "reviewed"); r.code == 0 {
+		t.Fatal("trusting an unknown skill should fail")
+	}
+	if r := f.run("", "skills", "remove", "metric-*"); r.code != 0 || strings.Count(r.stdout, "removed") != 2 {
+		t.Fatalf("remove: %+v", r)
+	}
+}

@@ -68,7 +68,8 @@ Usage:
   rbridge sessions [list|show|resume|cancel|prune]
                                                Manage sessions
   rbridge skills list|add|show|trust|verify|remove
-                                               Manage the skill library
+                                               Manage the skill library; add takes folders of
+                                               skills, --only/--exclude patterns, --dry-run, --trust
   rbridge skills deliver|undeliver|deliveries  Place skills in a runtime's own folders
   rbridge skills import|search|digest          skills-lock.json, catalogs, digests
   rbridge audit [--since 24h] [--json]         One line per session: profile, approvals, gaps
