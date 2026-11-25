@@ -95,8 +95,11 @@ type printer struct {
 	env    Env
 	asJSON bool
 	quiet  bool
-	mu     sync.Mutex
-	midMsg bool
+	// chat keeps a conversation readable: one header instead of a session
+	// line, and no per-turn summary unless verbose.
+	chat, verbose bool
+	mu            sync.Mutex
+	midMsg        bool
 }
 
 func (p *printer) Emit(e domain.Event) {
@@ -149,6 +152,9 @@ func (p *printer) Emit(e domain.Event) {
 		if d.Model != "" {
 			model = ", model " + d.Model
 		}
+		if p.chat && !p.verbose {
+			return
+		}
 		p.line("[session] %s on %s%s", e.SessionID, e.Provider, model)
 	}
 }
@@ -193,6 +199,9 @@ func (p *printer) result(r domain.Result) {
 	usage := ""
 	if r.Usage != nil {
 		usage = fmt.Sprintf(", %d in / %d out tokens", r.Usage.InputTokens, r.Usage.OutputTokens)
+	}
+	if p.chat && !p.verbose {
+		return
 	}
 	fmt.Fprintf(p.env.Stderr, "[done] %s, stop %s%s\n", r.SessionID, r.StopReason, usage)
 }
@@ -402,6 +411,7 @@ func cmdChat(ctx context.Context, args []string, env Env) error {
 	fs := newFlags("chat", env)
 	var tf taskFlags
 	tf.register(fs)
+	verbose := fs.Bool("v", false, "show the session id and a summary after each answer")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -419,7 +429,7 @@ func cmdChat(ctx context.Context, args []string, env Env) error {
 	if err != nil {
 		return err
 	}
-	pr := &printer{env: env, asJSON: tf.asJSON, quiet: tf.quiet}
+	pr := &printer{env: env, asJSON: tf.asJSON, quiet: tf.quiet, chat: true, verbose: *verbose}
 	sess, err := svc.OpenSession(ctx, t, service.RunOptions{Sink: pr, Approver: approver, Model: tf.model, Mode: tf.mode, Elicitor: newElicitor(env, in), Client: "cli"})
 	if err != nil {
 		return err
@@ -430,7 +440,11 @@ func cmdChat(ctx context.Context, args []string, env Env) error {
 
 func chatLoop(ctx context.Context, sess *service.Session, first string, in *bufio.Reader, pr *printer, env Env) error {
 	if !pr.asJSON {
-		fmt.Fprintf(env.Stderr, "[chat] session %s; type /exit to leave\n", sess.Record().ID)
+		if pr.verbose {
+			fmt.Fprintf(env.Stderr, "[chat] session %s; type /exit to leave\n", sess.Record().ID)
+		} else {
+			fmt.Fprintf(env.Stderr, "chatting with %s; /exit to leave, /help for commands\n", sess.Record().ProviderID)
+		}
 	}
 	next := strings.TrimSpace(first)
 	for {
