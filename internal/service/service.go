@@ -39,7 +39,7 @@ type Service struct {
 	getenv    func(string) string
 	environ   func() []string
 	now       func() time.Time
-	slots     chan struct{}
+	adm       *admission
 	redact    *redact.Redactor
 	catalogs  catalog.Client
 	sandboxes sandboxEngines
@@ -127,11 +127,11 @@ func New(o Options) (*Service, error) {
 		}
 		o.Store = st
 	}
+	gov := governor.New(o.Config.Execution.ResourceCeilingPercent, o.Config.Execution.MemoryHeadroomMB)
 	return &Service{
 		paths: o.Paths, cfg: o.Config, layers: o.Layers, registry: reg,
 		detector: o.Detector, store: o.Store, getenv: o.Getenv, environ: o.Environ, now: o.Now,
-		slots:  make(chan struct{}, max(1, o.Config.Execution.MaxConcurrentSessions)),
-		gov:    governor.New(o.Config.Execution.ResourceCeilingPercent, o.Config.Execution.MemoryHeadroomMB),
+		gov: gov, adm: newAdmission(o.Config.Execution.MaxConcurrentSessions, gov),
 		redact: redact.New().FromEnviron(o.Environ()),
 	}, nil
 }

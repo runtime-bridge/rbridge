@@ -407,12 +407,15 @@ type ErrorBody struct {
 	Code    domain.ErrorCode  `json:"code"`
 	Message string            `json:"message"`
 	Details map[string]string `json:"details,omitempty"`
+	// Retryable says the same request may succeed later, such as when every
+	// session slot is busy.
+	Retryable bool `json:"retryable,omitempty"`
 }
 
 func errorBody(err error) ErrorBody {
 	var de *domain.Error
 	if errors.As(err, &de) {
-		return ErrorBody{Code: de.Code, Message: de.Message, Details: de.Details}
+		return ErrorBody{Code: de.Code, Message: de.Message, Details: de.Details, Retryable: de.Retryable}
 	}
 	return ErrorBody{Code: domain.ErrInternal, Message: err.Error()}
 }

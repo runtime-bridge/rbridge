@@ -130,6 +130,7 @@ func Run(ctx context.Context, o Options) error {
 
 	hub := NewHub(o.Service, o.Config.Daemon.EventBuffer, o.Config.Daemon.SessionIdleTimeout)
 	hub.PerClient = o.Config.Daemon.MaxSessionsPerClient
+	hub.SlotWait = o.Config.Execution.SlotWait
 	api := &API{Hub: hub, Svc: o.Service, Started: time.Now().UTC()}
 	if list, err := o.Service.Sessions(ctx); err == nil {
 		n := 0

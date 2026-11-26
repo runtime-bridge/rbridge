@@ -30,6 +30,7 @@ const (
 //	permission  asks to edit notes.txt; writes it through fs/write_text_file if allowed
 //	readfile    reads the file named in the prompt through fs/read_text_file
 //	slow        streams a chunk every 20ms until cancelled
+//	busy        works for about a second (ten chunks), then answers "done: <prompt>"
 //	hang        never answers a prompt and ignores cancel
 //	auth        rejects session/new with "authentication required"
 //	crash       exits in the middle of a prompt
@@ -257,6 +258,18 @@ func (a *agent) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResp
 				a.send(ctx, sid, sdk.UpdateAgentMessageText(strconv.Itoa(i)+" "))
 			}
 		}
+
+	case "busy":
+		for i := 0; i < 10; i++ {
+			select {
+			case <-tctx.Done():
+				return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, nil
+			case <-time.After(100 * time.Millisecond):
+				a.send(ctx, sid, sdk.UpdateAgentMessageText("."))
+			}
+		}
+		a.send(ctx, sid, sdk.UpdateAgentMessageText("done: "+text))
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn, Usage: &sdk.Usage{InputTokens: 3, OutputTokens: 11, TotalTokens: 14}}, nil
 
 	case "hang":
 		select {}

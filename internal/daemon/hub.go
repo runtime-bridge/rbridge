@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -18,13 +19,22 @@ type Hub struct {
 	svc         *service.Service
 	bufSize     int
 	idleTimeout time.Duration
-	// PerClient limits open sessions per client; 0 means no limit.
+	// PerClient limits open sessions per client; 0 means no limit. A client at
+	// its limit waits, as a session waits for a slot, instead of failing.
 	PerClient int
-	now       func() time.Time
+	// SlotWait is how long a session waits when the task sets no wait of its
+	// own (execution.slot_wait); 30s when zero.
+	SlotWait time.Duration
+	now      func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]*live
 	closed   bool
+	// reserved counts sessions each client is opening, so concurrent opens
+	// cannot all pass the per-client check at once.
+	reserved map[string]int
+	// changed is closed and replaced whenever a client's count drops.
+	changed chan struct{}
 }
 
 // NewHub builds a hub over a service.
@@ -144,25 +154,11 @@ type OpenRequest struct {
 	Input bool `json:"input,omitempty"`
 }
 
-func (h *Hub) register(owner string, input bool, open func(service.RunOptions) (*service.Session, error)) (*live, error) {
-	h.mu.Lock()
-	if h.closed {
-		h.mu.Unlock()
-		return nil, domain.Errorf(domain.ErrProviderUnavailable, "daemon is shutting down")
+func (h *Hub) register(ctx context.Context, owner string, input bool, wait time.Duration, open func(service.RunOptions) (*service.Session, error)) (*live, error) {
+	if err := h.reserve(ctx, owner, wait); err != nil {
+		return nil, err
 	}
-	if h.PerClient > 0 {
-		n := 0
-		for _, l := range h.sessions {
-			if l.owner == owner {
-				n++
-			}
-		}
-		if n >= h.PerClient {
-			h.mu.Unlock()
-			return nil, domain.Errorf(domain.ErrPermissionDenied, "client %s already has %d open sessions; close one first", owner, n)
-		}
-	}
-	h.mu.Unlock()
+	defer h.unreserve(owner)
 	l := &live{
 		hub: h, owner: owner, subs: map[int]chan domain.Event{}, pending: map[string]chan domain.ApprovalDecision{},
 		requests: map[string]domain.ApprovalRequest{}, lastUsed: h.now(), closedSig: make(chan struct{}),
@@ -186,9 +182,77 @@ func (h *Hub) register(owner string, input bool, open func(service.RunOptions) (
 	return l, nil
 }
 
+// reserve holds one of the client's PerClient places while its session
+// opens, waiting while the client is at its limit.
+func (h *Hub) reserve(ctx context.Context, owner string, wait time.Duration) error {
+	if wait == 0 {
+		wait = h.SlotWait
+		if wait <= 0 {
+			wait = 30 * time.Second
+		}
+	}
+	var deadline <-chan time.Time
+	if wait > 0 {
+		t := time.NewTimer(wait)
+		defer t.Stop()
+		deadline = t.C
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for {
+		if h.closed {
+			return domain.Errorf(domain.ErrProviderUnavailable, "daemon is shutting down")
+		}
+		n := h.reserved[owner]
+		for _, l := range h.sessions {
+			if l.owner == owner {
+				n++
+			}
+		}
+		if h.PerClient <= 0 || n < h.PerClient {
+			if h.reserved == nil {
+				h.reserved = map[string]int{}
+			}
+			h.reserved[owner]++
+			return nil
+		}
+		if h.changed == nil {
+			h.changed = make(chan struct{})
+		}
+		changed := h.changed
+		h.mu.Unlock()
+		select {
+		case <-changed:
+			h.mu.Lock()
+		case <-deadline:
+			h.mu.Lock()
+			return &domain.Error{Code: domain.ErrPermissionDenied, Retryable: true,
+				Message: fmt.Sprintf("client %s already has %d open sessions (daemon.max_sessions_per_client); close one first", owner, n)}
+		case <-ctx.Done():
+			h.mu.Lock()
+			return domain.Errorf(domain.ErrCancelled, "waiting for a session place: %v", ctx.Err())
+		}
+	}
+}
+
+func (h *Hub) unreserve(owner string) {
+	h.mu.Lock()
+	h.reserved[owner]--
+	h.notify()
+	h.mu.Unlock()
+}
+
+// notify wakes clients waiting for a place. The caller holds mu.
+func (h *Hub) notify() {
+	if h.changed != nil {
+		close(h.changed)
+		h.changed = nil
+	}
+}
+
 // Open starts a new session.
 func (h *Hub) Open(ctx context.Context, owner string, req OpenRequest) (domain.SessionRecord, error) {
-	l, err := h.register(owner, req.Input, func(ro service.RunOptions) (*service.Session, error) {
+	l, err := h.register(ctx, owner, req.Input, req.Task.SlotWait, func(ro service.RunOptions) (*service.Session, error) {
 		ro.Model, ro.Mode = req.Model, req.Mode
 		return h.svc.OpenSession(ctx, req.Task, ro)
 	})
@@ -207,7 +271,7 @@ func (h *Hub) Resume(ctx context.Context, owner, id, model string, input bool) (
 	if err != nil || rec.Client != clientTag(owner) {
 		return domain.SessionRecord{}, domain.Errorf(domain.ErrSessionNotFound, "no session %q", id)
 	}
-	l, err := h.register(owner, input, func(ro service.RunOptions) (*service.Session, error) {
+	l, err := h.register(ctx, owner, input, 0, func(ro service.RunOptions) (*service.Session, error) {
 		ro.Model = model
 		return h.svc.ResumeSession(ctx, id, ro)
 	})
@@ -515,6 +579,7 @@ func (h *Hub) Close(ctx context.Context, owner, id string) error {
 func (h *Hub) close(ctx context.Context, l *live) error {
 	h.mu.Lock()
 	delete(h.sessions, l.id)
+	h.notify()
 	h.mu.Unlock()
 	l.mu.Lock()
 	if l.cancel != nil {

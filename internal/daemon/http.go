@@ -167,7 +167,7 @@ func (h *httpAPI) guard(next http.Handler) http.Handler {
 			return
 		}
 		if !h.limits.allow(client) {
-			writeErr(w, http.StatusTooManyRequests, domain.Errorf(domain.ErrPermissionDenied, "too many requests"))
+			writeErr(w, http.StatusTooManyRequests, &domain.Error{Code: domain.ErrPermissionDenied, Retryable: true, Message: "too many requests"})
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, h.opts.MaxBody)

@@ -436,9 +436,23 @@ func TestPerClientSessionLimit(t *testing.T) {
 		json.Unmarshal(b, &rec)
 		opened = append(opened, rec.ID)
 	}
-	if resp, b := e.req("POST", "/v1/sessions", "greedy", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}, nil); resp.StatusCode != 409 || !strings.Contains(string(b), "already has 8 open sessions") {
+	short := map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode", "slot_wait": int64(200 * time.Millisecond)}}
+	if resp, b := e.req("POST", "/v1/sessions", "greedy", short, nil); resp.StatusCode != 409 || !strings.Contains(string(b), "already has 8 open sessions") || !strings.Contains(string(b), `"retryable":true`) {
 		t.Fatalf("limit not applied: %d %s", resp.StatusCode, b)
 	}
+	// Told to wait until free, the ninth gets in as soon as one closes.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		e.req("DELETE", "/v1/sessions/"+opened[0], "greedy", nil, nil)
+	}()
+	untilFree := map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode", "slot_wait": -1}}
+	resp, b := e.req("POST", "/v1/sessions", "greedy", untilFree, nil)
+	if resp.StatusCode != 201 {
+		t.Fatalf("waiting open failed: %d %s", resp.StatusCode, b)
+	}
+	var waited domain.SessionRecord
+	json.Unmarshal(b, &waited)
+	opened = append(opened[1:], waited.ID)
 	if resp, _ := e.req("POST", "/v1/sessions", "other", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}, nil); resp.StatusCode != 201 {
 		t.Fatal("the limit is per client")
 	}

@@ -168,11 +168,11 @@ func (s *Service) Doctor(ctx context.Context) Report {
 			Fix: "Install bubblewrap (and allow it unprivileged user namespaces) or Docker, or set sandbox.mode: off."})
 	}
 	if g := s.gov; g.Enabled() {
-		permitted, load := g.Permitted(cap(s.slots))
+		permitted, load := g.Permitted(s.adm.limit)
 		detail := fmt.Sprintf("ceiling %.0f%%; the load cannot be read on this system, so nothing is throttled", g.CeilingPercent)
 		if load.Known {
 			detail = fmt.Sprintf("ceiling %.0f%%, load %.0f%% CPU and %.0f%% memory (%.0f MB free): %d of %d sessions may start now",
-				g.CeilingPercent, load.CPUPercent, load.MemoryPercent, load.AvailableMB, permitted, cap(s.slots))
+				g.CeilingPercent, load.CPUPercent, load.MemoryPercent, load.AvailableMB, permitted, s.adm.limit)
 		}
 		add(Check{Name: "resource governor", Status: CheckOK, Detail: detail})
 	}

@@ -375,7 +375,7 @@ func (s *Service) ResumeSession(ctx context.Context, id string, ro RunOptions) (
 }
 
 func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderStatus, rec domain.SessionRecord, t domain.Task, ro RunOptions, resume string) (*Session, error) {
-	release, err := s.acquire(ctx)
+	release, err := s.acquire(ctx, t.SlotWait)
 	if err != nil {
 		return nil, err
 	}
@@ -800,38 +800,17 @@ func (s *Service) Run(ctx context.Context, t domain.Task, ro RunOptions) (domain
 	return sess.Prompt(ctx, t.Prompt)
 }
 
-func (s *Service) acquire(ctx context.Context) (func(), error) {
-	wait := s.cfg.Execution.SlotWait
-	if wait <= 0 {
-		wait = 30 * time.Second
-	}
-	deadline := time.Now().Add(wait)
-	for {
-		// The governor lowers the number of sessions allowed while the machine
-		// is busy; it never lowers it to zero, so a lone session always starts.
-		permitted, load := s.gov.Permitted(cap(s.slots))
-		if len(s.slots) < permitted {
-			select {
-			case s.slots <- struct{}{}:
-				var once sync.Once
-				return func() { once.Do(func() { <-s.slots }) }, nil
-			default:
-			}
-		}
-		if !time.Now().Before(deadline) {
-			msg := fmt.Sprintf("all %d session slots are busy (execution.max_concurrent_sessions); try again later", cap(s.slots))
-			if permitted < cap(s.slots) {
-				msg = fmt.Sprintf("the machine is busy (%.0f%% against a %.0f%% ceiling), so only %d of %d sessions may run; try again later",
-					s.gov.Peak(load), s.gov.CeilingPercent, permitted, cap(s.slots))
-			}
-			return nil, &domain.Error{Code: domain.ErrProviderUnavailable, Retryable: true, Message: msg}
-		}
-		select {
-		case <-ctx.Done():
-			return nil, domain.Errorf(domain.ErrCancelled, "waiting for a free session slot: %v", ctx.Err())
-		case <-time.After(min(200*time.Millisecond, time.Until(deadline)+time.Millisecond)):
+// acquire queues for a session slot. A task's SlotWait above zero sets how
+// long to wait, below zero means until a slot frees, and zero takes
+// execution.slot_wait (30s when unset).
+func (s *Service) acquire(ctx context.Context, wait time.Duration) (func(), error) {
+	if wait == 0 {
+		wait = s.cfg.Execution.SlotWait
+		if wait <= 0 {
+			wait = 30 * time.Second
 		}
 	}
+	return s.adm.acquire(ctx, wait)
 }
 
 // SessionRecord returns a stored session, marking it interrupted when its

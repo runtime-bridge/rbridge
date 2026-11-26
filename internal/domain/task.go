@@ -40,11 +40,14 @@ type Task struct {
 	Preferences  []CapabilityName `json:"preferences,omitempty"`
 	Profile      string           `json:"profile,omitempty"`
 	// Sandbox overrides the configured sandbox mode: off, files or full.
-	Sandbox      string            `json:"sandbox,omitempty"`
-	MCPServers   []MCPServer       `json:"mcp_servers,omitempty"`
-	OutputSchema json.RawMessage   `json:"output_schema,omitempty"`
-	Timeout      time.Duration     `json:"timeout,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	Sandbox      string          `json:"sandbox,omitempty"`
+	MCPServers   []MCPServer     `json:"mcp_servers,omitempty"`
+	OutputSchema json.RawMessage `json:"output_schema,omitempty"`
+	Timeout      time.Duration   `json:"timeout,omitempty"`
+	// SlotWait is how long the task queues for a free session slot: above
+	// zero that long, below zero until one frees, zero execution.slot_wait.
+	SlotWait time.Duration     `json:"slot_wait,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // Validate checks the fields every provider relies on.
