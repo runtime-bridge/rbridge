@@ -20,6 +20,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/audit"
 	"github.com/runtime-bridge/rbridge/internal/buildinfo"
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/files"
 	"github.com/runtime-bridge/rbridge/internal/policy"
 	"github.com/runtime-bridge/rbridge/internal/process"
 	"github.com/runtime-bridge/rbridge/internal/providers/acp"
@@ -28,6 +29,7 @@ import (
 	"github.com/runtime-bridge/rbridge/internal/providers/registry"
 	"github.com/runtime-bridge/rbridge/internal/redact"
 	"github.com/runtime-bridge/rbridge/internal/skills/deliver"
+	skillreg "github.com/runtime-bridge/rbridge/internal/skills/registry"
 	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 )
 
@@ -68,6 +70,10 @@ type Session struct {
 	completed      int
 	failed         int
 	sandboxCleanup func()
+	// cleanup removes the files rbridge placed for the task; note tells the
+	// first turn about them.
+	cleanup func()
+	note    string
 
 	mu     sync.Mutex
 	rec    domain.SessionRecord
@@ -277,6 +283,102 @@ func (s *Service) nextProvider(ctx context.Context, t domain.Task, from string, 
 
 // OpenSession resolves a provider, delivers skills and starts the runtime.
 func (s *Service) OpenSession(ctx context.Context, t domain.Task, ro RunOptions) (*Session, error) {
+	note, cleanup, err := s.prepareTask(ctx, &t)
+	if err != nil {
+		return nil, err
+	}
+	sess, err := s.openSession(ctx, t, ro)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	sess.cleanup, sess.note = cleanup, note
+	return sess, nil
+}
+
+// prepareTask places the task's files and adds the skill folders it names.
+// It returns the note the first turn's prompt gets, and the function that
+// removes what it placed.
+func (s *Service) prepareTask(ctx context.Context, t *domain.Task) (string, func(), error) {
+	noop := func() {}
+	if err := s.skillFolders(ctx, t); err != nil {
+		return "", noop, err
+	}
+	if len(t.Files) == 0 {
+		return "", noop, nil
+	}
+	for _, f := range t.Files {
+		if !filepath.IsAbs(f) {
+			return "", noop, domain.Errorf(domain.ErrInvalidInput, "task files must be absolute paths: %q", f)
+		}
+	}
+	// Files go into a folder of their own: the workspace when the task has
+	// none, otherwise a folder inside it.
+	var dir string
+	if t.Workspace == "" {
+		base := filepath.Join(s.paths.DataDir, "workspaces")
+		if err := os.MkdirAll(base, 0o700); err != nil {
+			return "", noop, err
+		}
+		d, err := os.MkdirTemp(base, "task-")
+		if err != nil {
+			return "", noop, err
+		}
+		dir, t.Workspace = d, d
+	} else {
+		d, err := os.MkdirTemp(t.Workspace, ".rbridge-files-")
+		if err != nil {
+			return "", noop, domain.Errorf(domain.ErrInvalidInput, "cannot place files in %s: %v", t.Workspace, err)
+		}
+		dir = d
+	}
+	remove := func() { os.RemoveAll(dir) }
+	placed, err := files.Place(dir, t.Files)
+	if err != nil {
+		remove()
+		return "", noop, domain.Errorf(domain.ErrInvalidInput, "%v", err)
+	}
+	note := files.Note(placed)
+	if dir != t.Workspace {
+		rel, _ := filepath.Rel(t.Workspace, dir)
+		note = strings.Replace(note, "in your working folder", "in "+rel+" in your working folder", 1)
+	}
+	return note, remove, nil
+}
+
+// skillFolders turns skills given as folder paths into skill ids: every
+// skill in the folder is added to the library and trusted as reviewed,
+// since the caller who names a folder vouches for it. A trust decision
+// already made (trusted, restricted, blocked) stands.
+func (s *Service) skillFolders(ctx context.Context, t *domain.Task) error {
+	var ids []string
+	for _, sk := range t.Skills {
+		if !filepath.IsAbs(sk) {
+			ids = append(ids, sk)
+			continue
+		}
+		res, err := s.Skills().AddMany(ctx, skillreg.AddManyRequest{Paths: []string{sk}, SetTrust: func(ctx context.Context, id string) (domain.SkillRecord, error) {
+			rec, _, err := s.Skills().Get(ctx, id)
+			if err == nil && rec.Trust != domain.TrustUnreviewed && rec.Trust != "" {
+				return rec, nil
+			}
+			return s.SetSkillTrust(ctx, id, domain.TrustReviewed)
+		}})
+		if err != nil {
+			return err
+		}
+		for _, it := range res.Items {
+			if it.Status == "failed" {
+				return domain.Errorf(domain.ErrSkillInvalid, "%s: %s", it.ID, it.Reason)
+			}
+			ids = append(ids, it.ID)
+		}
+	}
+	t.Skills = ids
+	return nil
+}
+
+func (s *Service) openSession(ctx context.Context, t domain.Task, ro RunOptions) (*Session, error) {
 	if err := t.Validate(); err != nil {
 		return nil, err
 	}
@@ -663,6 +765,16 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 	}
 	s.rec.Turns++
 	turnID := fmt.Sprintf("%s.%d", s.rec.ID, s.rec.Turns)
+	if s.note != "" {
+		// The note joins the first text block, so a runtime that reads only
+		// one block still sees it.
+		if len(prompt) > 0 && prompt[0].Type == "text" {
+			prompt = append([]domain.ContentBlock{{Type: "text", Text: s.note + "\n\n" + prompt[0].Text}}, prompt[1:]...)
+		} else {
+			prompt = append([]domain.ContentBlock{{Type: "text", Text: s.note}}, prompt...)
+		}
+		s.note = ""
+	}
 	s.rec.State = domain.StateRunning
 	s.rec.UpdatedAt = s.svc.now()
 	rec := s.rec
@@ -755,6 +867,9 @@ func (s *Session) Close(ctx context.Context) error {
 	}
 	s.svc.untrackProjectLinks(s.rec.ID)
 	os.RemoveAll(s.scratch)
+	if s.cleanup != nil {
+		s.cleanup()
+	}
 	s.mu.Lock()
 	s.rec.State = domain.StateClosed
 	s.rec.UpdatedAt = s.svc.now()

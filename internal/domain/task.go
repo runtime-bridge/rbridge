@@ -46,7 +46,11 @@ type Task struct {
 	Timeout      time.Duration   `json:"timeout,omitempty"`
 	// SlotWait is how long the task queues for a free session slot: above
 	// zero that long, below zero until one frees, zero execution.slot_wait.
-	SlotWait time.Duration     `json:"slot_wait,omitempty"`
+	SlotWait time.Duration `json:"slot_wait,omitempty"`
+	// Files are absolute paths of files the task brings. rbridge copies them
+	// into a working folder of their own (the workspace, when none is given),
+	// adds a text copy of each Word file, and tells the runtime about them.
+	Files    []string          `json:"files,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
@@ -54,6 +58,11 @@ type Task struct {
 func (t Task) Validate() error {
 	if t.Workspace == "" {
 		return Errorf(ErrInvalidInput, "task workspace is required")
+	}
+	for _, f := range t.Files {
+		if !filepath.IsAbs(f) {
+			return Errorf(ErrInvalidInput, "task files must be absolute paths: %q", f)
+		}
 	}
 	if !filepath.IsAbs(t.Workspace) {
 		return Errorf(ErrInvalidInput, "task workspace must be an absolute path: %q", t.Workspace)

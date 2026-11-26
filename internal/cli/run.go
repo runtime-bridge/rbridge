@@ -46,6 +46,7 @@ type taskFlags struct {
 	quiet     bool
 	skills    listFlag
 	requires  listFlag
+	files     listFlag
 }
 
 func (f *taskFlags) register(fs *flag.FlagSet) {
@@ -60,20 +61,38 @@ func (f *taskFlags) register(fs *flag.FlagSet) {
 	fs.DurationVar(&f.timeout, "timeout", 0, "task timeout (default from config)")
 	fs.BoolVar(&f.asJSON, "json", false, "print events and the result as JSON lines")
 	fs.BoolVar(&f.quiet, "quiet", false, "print only the final answer")
-	fs.Var(&f.skills, "skill", "skill id to deliver; repeatable")
+	fs.Var(&f.skills, "skill", "skill to deliver: an id, or a folder of skills you vouch for (added and trusted); repeatable")
+	fs.Var(&f.files, "file", "a file for the task, copied into a working folder of its own (Word files get a text copy); repeatable")
 	fs.Var(&f.requires, "require", "required capability; repeatable")
 }
 
 func (f *taskFlags) task(env Env, prompt string) (domain.Task, error) {
-	ws := f.workspace
-	if ws == "" {
-		ws = env.Dir
+	abs := func(p string) string {
+		if filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(env.Dir, p)
 	}
-	ws, err := filepath.Abs(ws)
-	if err != nil {
-		return domain.Task{}, err
+	// With files and no --workspace, rbridge makes a working folder holding
+	// only the files.
+	ws := ""
+	if f.workspace != "" || len(f.files) == 0 {
+		ws = f.workspace
+		if ws == "" {
+			ws = env.Dir
+		}
+		ws = abs(ws)
 	}
-	t := domain.Task{Workspace: ws, Prompt: domain.Text(prompt), Skills: f.skills, Provider: f.provider, Timeout: f.timeout, Profile: f.profile, Sandbox: f.sandbox}
+	t := domain.Task{Workspace: ws, Prompt: domain.Text(prompt), Provider: f.provider, Timeout: f.timeout, Profile: f.profile, Sandbox: f.sandbox}
+	for _, sk := range f.skills {
+		if info, err := os.Stat(abs(sk)); err == nil && info.IsDir() {
+			sk = abs(sk)
+		}
+		t.Skills = append(t.Skills, sk)
+	}
+	for _, file := range f.files {
+		t.Files = append(t.Files, abs(file))
+	}
 	for _, r := range f.requires {
 		t.Requirements = append(t.Requirements, domain.CapabilityName(r))
 	}
