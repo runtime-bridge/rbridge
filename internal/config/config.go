@@ -261,8 +261,11 @@ const (
 	LayerDefaults = "defaults"
 	LayerSystem   = "system"
 	LayerUser     = "user"
-	LayerProject  = "project"
-	LayerTask     = "task"
+	// LayerApp is rbridge.yaml in the folder that holds RBRIDGE_HOME, such
+	// as a project's .rbridge: an application keeps its settings there.
+	LayerApp     = "app"
+	LayerProject = "project"
+	LayerTask    = "task"
 )
 
 // LayerInfo describes one layer that took part in a load.
@@ -315,6 +318,14 @@ func Load(paths Paths, opts LoadOptions) (Config, []LayerInfo, error) {
 		return Config{}, nil, err
 	}
 	add(LayerUser, paths.UserConfigFile(), user, found)
+
+	if paths.AppConfig != "" {
+		app, found, err := readLayer(paths.AppConfig)
+		if err != nil {
+			return Config{}, nil, err
+		}
+		add(LayerApp, paths.AppConfig, app, found)
+	}
 
 	if opts.ProjectDir != "" {
 		p := filepath.Join(opts.ProjectDir, ProjectFileName)

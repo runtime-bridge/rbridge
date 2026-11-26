@@ -46,7 +46,7 @@ func TestLoadDefaultsOnly(t *testing.T) {
 	if !slices.Equal(cfg.Providers.Order, []string{"claude-code", "opencode"}) {
 		t.Errorf("order = %v", cfg.Providers.Order)
 	}
-	if len(layers) != 3 || layers[1].Found || layers[2].Found {
+	if len(layers) != 4 || layers[1].Found || layers[2].Found || layers[3].Name != LayerApp || layers[3].Found {
 		t.Errorf("unexpected layers %+v", layers)
 	}
 }
@@ -202,6 +202,7 @@ func TestResolvePaths(t *testing.T) {
 			DataDir:      "/r/data",
 			CacheDir:     "/r/cache",
 			RuntimeDir:   "/r/run",
+			AppConfig:    "/rbridge.yaml",
 		}},
 	}
 	for _, c := range cases {
@@ -247,4 +248,37 @@ func absPath(name string) string {
 		return `C:\` + name
 	}
 	return "/" + name
+}
+
+func TestAppConfigBesideHome(t *testing.T) {
+	project := t.TempDir()
+	home := filepath.Join(project, ".rbridge")
+	paths, err := ResolvePaths(Env{GOOS: "linux", Getenv: func(k string) string {
+		if k == "RBRIDGE_HOME" {
+			return home
+		}
+		return ""
+	}})
+	if err != nil || paths.AppConfig != filepath.Join(project, "rbridge.yaml") {
+		t.Fatalf("%+v %v", paths, err)
+	}
+	os.MkdirAll(filepath.Join(home, "config"), 0o700)
+	os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte("execution:\n  max_concurrent_sessions: 3\n  slot_wait: 5s\n"), 0o600)
+	os.WriteFile(paths.AppConfig, []byte("execution:\n  max_concurrent_sessions: 6\n"), 0o600)
+	cfg, layers, err := Load(paths, LoadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Execution.MaxConcurrentSessions != 6 || cfg.Execution.SlotWait.String() != "5s" {
+		t.Fatalf("the app file should override the user file key by key: %+v", cfg.Execution)
+	}
+	var names []string
+	for _, l := range layers {
+		if l.Found {
+			names = append(names, l.Name)
+		}
+	}
+	if strings.Join(names, ",") != "defaults,user,app" {
+		t.Fatalf("layers %v", names)
+	}
 }

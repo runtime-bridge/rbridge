@@ -22,6 +22,9 @@ type Paths struct {
 	DataDir      string // skills, session index, audit
 	CacheDir     string // detection cache
 	RuntimeDir   string // sockets and other per-login state
+	// AppConfig is rbridge.yaml beside RBRIDGE_HOME (in the folder holding
+	// it), read after the user file; empty without RBRIDGE_HOME.
+	AppConfig string
 }
 
 // UserConfigFile is the user-level configuration file.
@@ -59,6 +62,7 @@ func ResolvePaths(env Env) (Paths, error) {
 			DataDir:      filepath.Join(h, "data"),
 			CacheDir:     filepath.Join(h, "cache"),
 			RuntimeDir:   filepath.Join(h, "run"),
+			AppConfig:    filepath.Join(filepath.Dir(h), "rbridge.yaml"),
 		}, nil
 	}
 	if env.HomeDir == "" {
