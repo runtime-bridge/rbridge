@@ -52,6 +52,9 @@ type ProviderEntry struct {
 	Args []string `yaml:"args"`
 	// Model is used when a task does not choose one.
 	Model string `yaml:"model"`
+	// Models maps names a task may give (latest, auto, or your own such as
+	// fast) to models the runtime accepts, over the runtime's own mapping.
+	Models map[string]string `yaml:"models"`
 	// URL overrides a model server's address (for example ollama).
 	URL string `yaml:"url"`
 	// AllowAccountLogin lets rbridge use a runtime whose terms make API keys

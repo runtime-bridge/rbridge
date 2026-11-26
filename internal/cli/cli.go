@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -355,6 +357,17 @@ func cmdProvidersShow(ctx context.Context, args []string, env Env) error {
 	fmt.Fprintf(w, "  integration:  %s\n", rt.Integration)
 	fmt.Fprintf(w, "  auth:         %s\n", rt.AuthMode)
 	fmt.Fprintf(w, "  class:        %s\n", p.Class)
+	if len(p.ModelNames) > 0 {
+		var names []string
+		for _, k := range slices.Sorted(maps.Keys(p.ModelNames)) {
+			v := p.ModelNames[k]
+			if v == k {
+				v = "the runtime's own choice"
+			}
+			names = append(names, k+" = "+v)
+		}
+		fmt.Fprintf(w, "  model names:  %s; or any model name the runtime accepts\n", strings.Join(names, ", "))
+	}
 	if len(rt.Installations) > 1 || hasErrors(rt.Installations) {
 		fmt.Fprintln(w, "\nInstallations:")
 		for _, in := range rt.Installations {

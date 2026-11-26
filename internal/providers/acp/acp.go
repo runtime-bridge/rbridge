@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/runtime-bridge/rbridge/internal/domain"
 	"github.com/runtime-bridge/rbridge/internal/process"
+	"github.com/runtime-bridge/rbridge/internal/suggest"
 )
 
 // Launch is how to start the agent process.
@@ -165,6 +167,28 @@ func (s *Session) handshake(ctx context.Context, l Launch) error {
 	s.setOptions(configOptions)
 
 	model := currentModel(configOptions)
+	choices := modelChoices(configOptions)
+	switch s.opts.Model {
+	case domain.ModelLatest:
+		// The runtime lists no release dates; its own default is the newest
+		// model it recommends.
+		s.opts.Model = ""
+	case domain.ModelAuto:
+		s.opts.Model = ""
+		for _, c := range choices {
+			if strings.EqualFold(c, "auto") || strings.HasPrefix(strings.ToLower(c), "auto") {
+				s.opts.Model = c
+				break
+			}
+		}
+	}
+	if s.opts.Model != "" && len(choices) > 0 && !slices.Contains(choices, s.opts.Model) {
+		full, err := matchModel(s.opts.Model, choices)
+		if err != nil {
+			return err
+		}
+		s.opts.Model = full
+	}
 	if s.opts.Model != "" {
 		_, err := s.conn.SetSessionConfigOption(hctx, sdk.SetSessionConfigOptionRequest{ValueId: &sdk.SetSessionConfigOptionValueId{
 			SessionId: sdk.SessionId(s.nativeID), ConfigId: "model", Value: sdk.SessionConfigValueId(s.opts.Model),
@@ -385,6 +409,61 @@ func handshakeCapabilities(a sdk.AgentCapabilities) domain.CapabilitySet {
 		domain.CapPromptImage:        c(b(a.PromptCapabilities.Image), ""),
 		domain.CapPromptAudio:        c(b(a.PromptCapabilities.Audio), ""),
 	}
+}
+
+// matchModel finds the runtime's own name for a model given without its
+// provider prefix (big-pickle for opencode/big-pickle), when only one fits.
+func matchModel(want string, choices []string) (string, error) {
+	short := func(c string) string { return c[strings.LastIndex(c, "/")+1:] }
+	var hits []string
+	for _, c := range choices {
+		if strings.EqualFold(short(c), want) || strings.EqualFold(c, want) {
+			hits = append(hits, c)
+		}
+	}
+	if len(hits) == 1 {
+		return hits[0], nil
+	}
+	if len(hits) > 1 {
+		return "", domain.Errorf(domain.ErrInvalidInput, "model %q could be %s; give the full name", want, strings.Join(hits, " or "))
+	}
+	names := make([]string, 0, len(choices)*2)
+	for _, c := range choices {
+		names = append(names, c, short(c))
+	}
+	shown := choices
+	more := ""
+	if len(shown) > 10 {
+		shown, more = shown[:10], fmt.Sprintf(" and %d more", len(choices)-10)
+	}
+	return "", domain.Errorf(domain.ErrInvalidInput, "this runtime has no model %q%s (it offers %s%s; or use latest or auto)",
+		want, suggest.DidYouMean(want, names), strings.Join(shown, ", "), more)
+}
+
+// modelChoices lists the values of the runtime's model setting.
+func modelChoices(opts []sdk.SessionConfigOption) []string {
+	b, err := json.Marshal(opts)
+	if err != nil {
+		return nil
+	}
+	var raw []struct {
+		ID      string `json:"id"`
+		Options []struct {
+			Value string `json:"value"`
+		} `json:"options"`
+	}
+	if json.Unmarshal(b, &raw) != nil {
+		return nil
+	}
+	var out []string
+	for _, o := range raw {
+		if o.ID == "model" {
+			for _, v := range o.Options {
+				out = append(out, v.Value)
+			}
+		}
+	}
+	return out
 }
 
 func currentModel(opts []sdk.SessionConfigOption) string {

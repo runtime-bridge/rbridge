@@ -205,7 +205,11 @@ type ProviderStatus struct {
 	Skills       SkillLocations       `json:"skills"`
 	Limits       []string             `json:"limits,omitempty"`
 	Notes        []string             `json:"notes,omitempty"`
-	Cached       bool                 `json:"cached"`
+	// ModelNames are the short model names this runtime takes (latest,
+	// auto, and any set in providers.<id>.models), each with the model it
+	// becomes.
+	ModelNames map[string]string `json:"model_names,omitempty"`
+	Cached     bool              `json:"cached"`
 }
 
 // Providers detects every provider, using the cache unless refresh is set.
@@ -316,6 +320,7 @@ func (s *Service) status(ctx context.Context, m registry.Manifest, refresh bool)
 		Skills:       s.skillLocations(m),
 		Limits:       m.Limits,
 		Notes:        notes,
+		ModelNames:   s.modelNames(m),
 		Cached:       cached,
 	}, nil
 }

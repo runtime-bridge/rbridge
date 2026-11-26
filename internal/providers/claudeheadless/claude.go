@@ -264,6 +264,10 @@ func (s *Session) finish(r resultMsg, ts *turnState) (domain.TurnResult, error) 
 		if msg == "" {
 			msg = "Claude Code reported an error (" + r.Subtype + ")"
 		}
+		if strings.Contains(msg, "issue with the selected model") {
+			code = domain.ErrInvalidInput
+			msg += " Claude Code takes latest, auto, a family alias (opus, sonnet, haiku) or a full model name."
+		}
 		return domain.TurnResult{}, &domain.Error{Code: code, Message: msg}
 	}
 	stop := domain.StopEndTurn

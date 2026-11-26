@@ -101,6 +101,8 @@ type Result struct {
 	Structured json.RawMessage `json:"structured,omitempty"`
 	Usage      *Usage          `json:"usage,omitempty"`
 	Provider   string          `json:"provider"`
-	Skills     []SkillDelivery `json:"skills,omitempty"`
-	Errors     []*Error        `json:"errors,omitempty"`
+	// Model is the model the runtime reported using, when it says.
+	Model  string          `json:"model,omitempty"`
+	Skills []SkillDelivery `json:"skills,omitempty"`
+	Errors []*Error        `json:"errors,omitempty"`
 }

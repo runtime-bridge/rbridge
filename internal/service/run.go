@@ -97,6 +97,8 @@ type sequencer struct {
 	now      func() time.Time
 	redact   *redact.Redactor
 	watch    *skillWatch
+	// model is the model the runtime reported in session.started.
+	model atomic.Value
 }
 
 func (q *sequencer) Emit(e domain.Event) {
@@ -117,6 +119,12 @@ func (q *sequencer) Emit(e domain.Event) {
 		q.logMu.Lock()
 		q.log.Write(append(b, '\n'))
 		q.logMu.Unlock()
+	}
+	if e.Type == domain.EventSessionStarted {
+		var d domain.SessionStartedData
+		if json.Unmarshal(e.Data, &d) == nil && d.Model != "" {
+			q.model.Store(d.Model)
+		}
 	}
 	q.watch.observe(e)
 	if q.out != nil {
@@ -489,6 +497,7 @@ func (s *Service) start(ctx context.Context, m registry.Manifest, st ProviderSta
 	if launcher != nil {
 		opts.Launcher = launcher
 	}
+	opts.Model = s.modelName(m, opts.Model)
 	if opts.Model == "" {
 		opts.Model = s.cfg.Providers.Settings[m.ID].Model
 		rec.Model = opts.Model
@@ -673,9 +682,13 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 		err = domain.Errorf(domain.ErrExecutionTimeout, "task timed out after %s", s.timeout)
 	}
 
+	model, _ := s.sink.model.Load().(string)
 	s.mu.Lock()
 	s.rec.NativeID = s.ps.NativeID()
 	s.rec.UpdatedAt = s.svc.now()
+	if model != "" {
+		s.rec.Model = model
+	}
 	if err != nil {
 		err = s.svc.scrub(err)
 		s.rec.State = domain.StateReady
@@ -715,7 +728,7 @@ func (s *Session) Prompt(ctx context.Context, prompt []domain.ContentBlock) (dom
 	s.sink.Emit(domain.NewEvent(domain.EventTurnCompleted, domain.TurnCompletedData{StopReason: res.StopReason, Output: res.Output, Structured: res.Structured, Usage: res.Usage}))
 	return domain.Result{
 		SessionID: rec.ID, StopReason: res.StopReason, Output: res.Output, Structured: res.Structured,
-		Usage: res.Usage, Provider: s.m.ID, Skills: rec.Skills,
+		Usage: res.Usage, Provider: s.m.ID, Model: model, Skills: rec.Skills,
 	}, nil
 }
 
@@ -798,6 +811,41 @@ func (s *Service) Run(ctx context.Context, t domain.Task, ro RunOptions) (domain
 	}
 	defer sess.Close(context.Background())
 	return sess.Prompt(ctx, t.Prompt)
+}
+
+// modelName turns a short model name (latest, auto, or one set in
+// providers.<id>.models) into the runtime's own, configuration first. A
+// keyword with no mapping goes to the runtime adapter, which resolves it
+// from the models the runtime lists.
+func (s *Service) modelName(m registry.Manifest, model string) string {
+	if v, ok := s.cfg.Providers.Settings[m.ID].Models[model]; ok && v != "" {
+		return v
+	}
+	if v, ok := m.ModelNames[model]; ok {
+		return v
+	}
+	// auto with a model pinned in configuration is that model.
+	if model == domain.ModelAuto && s.cfg.Providers.Settings[m.ID].Model != "" {
+		return s.cfg.Providers.Settings[m.ID].Model
+	}
+	return model
+}
+
+// modelNames lists every short name the runtime takes and what it becomes.
+func (s *Service) modelNames(m registry.Manifest) map[string]string {
+	out := map[string]string{}
+	for k, v := range m.ModelNames {
+		out[k] = v
+	}
+	for k, v := range s.cfg.Providers.Settings[m.ID].Models {
+		out[k] = v
+	}
+	for _, kw := range []string{domain.ModelLatest, domain.ModelAuto} {
+		if _, ok := out[kw]; !ok {
+			out[kw] = s.modelName(m, kw) // the runtime chooses when it stays a keyword
+		}
+	}
+	return out
 }
 
 // acquire queues for a session slot. A task's SlotWait above zero sets how

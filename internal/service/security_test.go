@@ -218,8 +218,9 @@ func TestDefaultModelFromConfig(t *testing.T) {
 	if !strings.Contains(string(b), "--model\nhaiku") {
 		t.Fatalf("model not passed: %s", b)
 	}
-	if rec, _ := h.svc().SessionRecord(context.Background(), res.SessionID); rec.Model != "haiku" {
-		t.Fatalf("record model %q", rec.Model)
+	// The record keeps the model the runtime reported running.
+	if rec, _ := h.svc().SessionRecord(context.Background(), res.SessionID); rec.Model != "fake-model" || res.Model != "fake-model" {
+		t.Fatalf("record model %q, result model %q", rec.Model, res.Model)
 	}
 }
 

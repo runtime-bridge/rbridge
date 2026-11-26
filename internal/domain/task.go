@@ -71,3 +71,13 @@ func (t Task) Validate() error {
 	}
 	return nil
 }
+
+// Model keywords a task may give instead of a model name. Each runtime turns
+// them into one of its own models; see Manifest.ModelNames.
+const (
+	// ModelLatest is the runtime's newest flagship model.
+	ModelLatest = "latest"
+	// ModelAuto is the model the runtime itself recommends for the account
+	// and the work, where it has such a choice, or else its default.
+	ModelAuto = "auto"
+)

@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -94,7 +95,8 @@ func Probe(ctx context.Context, client *http.Client, s Server) (ok bool, version
 	return true, v.Version, ""
 }
 
-// Models lists the models the server has.
+// Models lists the models the server has, the most recently pulled first
+// when the server says when (Ollama does).
 func Models(ctx context.Context, client *http.Client, s Server) ([]string, error) {
 	path := "/api/tags"
 	if s.API == APIOpenAI {
@@ -111,7 +113,8 @@ func Models(ctx context.Context, client *http.Client, s Server) ([]string, error
 	defer resp.Body.Close()
 	var body struct {
 		Models []struct {
-			Name string `json:"name"`
+			Name     string `json:"name"`
+			Modified string `json:"modified_at"`
 		} `json:"models"`
 		Data []struct {
 			ID string `json:"id"`
@@ -121,6 +124,7 @@ func Models(ctx context.Context, client *http.Client, s Server) ([]string, error
 		return nil, err
 	}
 	var out []string
+	sort.SliceStable(body.Models, func(i, j int) bool { return body.Models[i].Modified > body.Models[j].Modified })
 	for _, m := range body.Models {
 		out = append(out, m.Name)
 	}
@@ -167,6 +171,13 @@ func Open(ctx context.Context, server Server, client *http.Client, caps domain.C
 	}
 	if ok, _, note := Probe(ctx, client, server); !ok {
 		return nil, domain.Errorf(domain.ErrProviderUnavailable, "%s", note)
+	}
+	if opts.Model == domain.ModelLatest || opts.Model == domain.ModelAuto {
+		models, err := Models(ctx, client, server)
+		if err != nil || len(models) == 0 {
+			return nil, domain.Errorf(domain.ErrInvalidInput, "%s needs a model on the server, and it reports none", opts.Model)
+		}
+		opts.Model = models[0]
 	}
 	if opts.Model == "" {
 		models, _ := Models(ctx, client, server)

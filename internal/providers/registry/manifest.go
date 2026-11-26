@@ -35,6 +35,9 @@ type Manifest struct {
 	AccountLoginForbidden bool
 	Limits                []string
 	Notes                 []string
+	// ModelNames turns model keywords (latest, auto) and other short names
+	// into names this runtime accepts. providers.<id>.models adds to it.
+	ModelNames map[string]string
 	// Server is set for model servers, which are reached over HTTP instead
 	// of being started.
 	Server ServerSpec
@@ -163,6 +166,9 @@ func ClaudeCode() Manifest {
 			"Does not read .agents/skills; skills are delivered to .claude/skills locations.",
 		},
 		Notes: []string{"Default account (~/.claude). Other accounts appear as claude-code-<name>.", "Sign-in is checked by Claude Code itself; rbridge only sees the result of a run."},
+		// Claude Code's aliases always name the newest model of a family;
+		// default is its own recommended choice for the account.
+		ModelNames: map[string]string{domain.ModelLatest: "opus", domain.ModelAuto: "default"},
 	}
 }
 

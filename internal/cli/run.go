@@ -51,7 +51,7 @@ type taskFlags struct {
 func (f *taskFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.workspace, "workspace", "", "project directory the runtime works in (default: current directory)")
 	fs.StringVar(&f.provider, "provider", "", "provider id; default is the first available one that meets the requirements")
-	fs.StringVar(&f.model, "model", "", "model name passed to the runtime")
+	fs.StringVar(&f.model, "model", "", "model: latest (the runtime's newest flagship), auto (its own recommended choice), or a model name; rbridge providers show <id> lists the names")
 	fs.StringVar(&f.sandbox, "sandbox", "", "run the runtime in an OS sandbox: off, files (writes limited to the workspace) or full (and no network); default from config")
 	fs.StringVar(&f.mode, "mode", "", "runtime session mode to start in, for runtimes that offer modes")
 	fs.StringVar(&f.profile, "profile", "", "policy profile: observe, standard, controlled or custom (default from config)")
