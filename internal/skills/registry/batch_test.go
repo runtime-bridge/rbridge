@@ -2,14 +2,17 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/runtime-bridge/rbridge/internal/domain"
+	"github.com/runtime-bridge/rbridge/internal/skills/spec"
 )
 
 func skillTree(t *testing.T) string {
@@ -175,5 +178,48 @@ func TestAddManyFromGit(t *testing.T) {
 	}
 	if _, err := newReg(t).AddMany(ctx, AddManyRequest{URL: "file://" + repo, Rev: "main", Subdirs: []string{"nowhere"}}); domain.CodeOf(err) != domain.ErrInvalidInput {
 		t.Fatalf("missing subdir: %v", err)
+	}
+}
+
+// Several sessions adding the same skill folder at once, as an SDK's
+// run_many does, must all succeed and leave one complete copy.
+func TestConcurrentAddsOfOneSkill(t *testing.T) {
+	ctx := context.Background()
+	src := skillDir(t, t.TempDir(), "evidence-rules", strings.Repeat("rules\n", 2000))
+	for i := 0; i < 40; i++ {
+		os.WriteFile(filepath.Join(src, "scripts", fmt.Sprintf("f%d.txt", i)), []byte(strings.Repeat("x", 5000)), 0o644)
+	}
+	r := newReg(t)
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := r.AddMany(ctx, AddManyRequest{Paths: []string{src}, SetTrust: func(ctx context.Context, id string) (domain.SkillRecord, error) {
+				return r.SetTrust(ctx, id, domain.TrustReviewed)
+			}})
+			if err == nil && res.Failed() > 0 {
+				err = fmt.Errorf("%+v", res.Items)
+			}
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec, _, _ := r.Get(ctx, "evidence-rules")
+	if rec.Trust != domain.TrustReviewed {
+		t.Fatalf("trust %s", rec.Trust)
+	}
+	if got, err := spec.Digest(r.libraryPath(rec.ID, rec.Digest), r.Limits); err != nil || got != rec.Digest {
+		t.Fatalf("library copy is not intact: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(r.libraryPath(rec.ID, rec.Digest)), "*.partial-*")); len(left) > 0 {
+		t.Fatalf("temporary copies left behind: %v", left)
 	}
 }

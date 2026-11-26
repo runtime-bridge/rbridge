@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/runtime-bridge/rbridge/internal/domain"
@@ -198,7 +199,14 @@ func RunGit(ctx context.Context, dir string, args ...string) (string, error) {
 var lookGit = func() (string, error) { return execLookPath("git") }
 
 // install records the skill. copyFrom is empty for linked skills.
+// installMu serialises library changes within a process, such as several
+// sessions adding the same skill at once; installCopy keeps separate
+// processes from seeing a half-written skill.
+var installMu sync.Mutex
+
 func (r *Registry) install(ctx context.Context, sk spec.Skill, source domain.SkillSource, copyFrom string) (AddResult, error) {
+	installMu.Lock()
+	defer installMu.Unlock()
 	res := AddResult{Warnings: sk.Warnings}
 	prev, had, err := r.Get(ctx, sk.Name)
 	if err != nil {
@@ -210,15 +218,21 @@ func (r *Registry) install(ctx context.Context, sk spec.Skill, source domain.Ski
 	}
 	if copyFrom != "" {
 		dest := r.libraryPath(sk.Name, sk.Digest)
+		copied := false
 		if _, err := os.Stat(dest); err != nil {
-			if err := copySkill(copyFrom, dest, nil); err != nil {
+			if err := installCopy(copyFrom, dest); err != nil {
 				return res, err
 			}
+			copied = true
 		}
 		got, err := spec.Digest(dest, r.Limits)
 		if err != nil || got != sk.Digest {
-			os.RemoveAll(filepath.Dir(dest))
-			return res, domain.Errorf(domain.ErrSkillDigestMismatch, "copied skill does not match its source")
+			// The source changed while it was copied. Remove only what this
+			// call wrote; a copy that was already there belongs to another.
+			if copied {
+				os.RemoveAll(dest)
+			}
+			return res, domain.Errorf(domain.ErrSkillDigestMismatch, "copied skill does not match its source; add it again")
 		}
 	}
 	rec := domain.SkillRecord{
@@ -319,6 +333,8 @@ func ParseTrust(s string) (domain.TrustState, error) {
 
 // SetTrust changes a skill's trust state after checking its content is unchanged.
 func (r *Registry) SetTrust(ctx context.Context, id string, t domain.TrustState) (domain.SkillRecord, error) {
+	installMu.Lock()
+	defer installMu.Unlock()
 	rec, err := r.Require(ctx, id)
 	if err != nil {
 		return rec, err
@@ -379,13 +395,45 @@ func CopySkill(src, dest string, skip func(rel string) bool) error {
 	return copySkill(src, dest, skip)
 }
 
+// copySkill copies src to dest, replacing whatever dest held.
 func copySkill(src, dest string, skip func(rel string) bool) error {
-	tmp := dest + ".partial"
-	os.RemoveAll(tmp)
-	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+	tmp, err := copyToTemp(src, dest, skip)
+	if err != nil {
 		return err
 	}
-	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+	os.RemoveAll(dest)
+	return os.Rename(tmp, dest)
+}
+
+// installCopy copies src to dest unless dest appears first: another install
+// of the same content may land it while this copy runs, and then that one is
+// kept. Either way dest is never seen half written.
+func installCopy(src, dest string) error {
+	tmp, err := copyToTemp(src, dest, nil)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		os.RemoveAll(tmp)
+		if _, statErr := os.Stat(dest); statErr == nil {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// copyToTemp copies src into a new folder beside dest, named uniquely so
+// concurrent copies never share it, and returns that folder.
+func copyToTemp(src, dest string, skip func(rel string) bool) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+		return "", err
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dest), filepath.Base(dest)+".partial-")
+	if err != nil {
+		return "", err
+	}
+	err = filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -420,10 +468,9 @@ func copySkill(src, dest string, skip func(rel string) bool) error {
 	})
 	if err != nil {
 		os.RemoveAll(tmp)
-		return err
+		return "", err
 	}
-	os.RemoveAll(dest)
-	return os.Rename(tmp, dest)
+	return tmp, nil
 }
 
 func copyFile(src, dst string, mode fs.FileMode) error {
