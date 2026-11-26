@@ -76,6 +76,8 @@ When the session closes the daemon sends `{"jsonrpc":"2.0","method":"session.end
 
 `error.data.code` is one of rbridge's stable error codes. `error.data.retryable` is true when the same request may succeed later, such as when every session slot is busy; the SDKs retry such errors when opening a session.
 
+A task may bring `files` (absolute paths): rbridge copies them into a working folder of their own (the workspace, when the task gives none, removed when the session closes), writes a text copy of each Word file beside it, and tells the runtime about them in the first turn. A task's `skills` may name folders by absolute path: every skill in the folder is added to the library and trusted as reviewed, unless a trust decision was already made for it.
+
 A task may set `slot_wait` (nanoseconds): how long its session queues for a free slot and, in the daemon, for a place under `daemon.max_sessions_per_client`. Negative waits until one frees; zero uses `execution.slot_wait`. A task's `model` may be `latest`, `auto`, a name from `providers.<id>.models`, or a model the runtime accepts; results carry `model`, the model the runtime reported running. JSON-RPC codes: -32700 parse error, -32601 unknown method, -32602 invalid handshake parameters, -32002 not initialized, -32000 every rbridge error.
 
 ## Lifetime

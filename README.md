@@ -61,6 +61,7 @@ $ rbridge run --provider opencode --model ollama/qwen3:8b --quiet "List the TODO
 $ echo "Explain main.go" | rbridge run --json
 $ rbridge chat --provider claude-code       # a normal conversation, streamed; /exit to leave
 $ rbridge run --model latest "..."          # the runtime's newest flagship; auto = its own recommended choice
+$ rbridge run --file report.pdf --file bill.docx "Summarise both"   # files go to a working folder of their own
 ```
 
 A mistyped command or runtime gets a suggestion (`rbridge skill list` answers "did you mean skills?"), and `ls`, `rm` and `info` work as aliases.
@@ -165,7 +166,7 @@ const rb = new Rbridge({ runtime: "claude-code" });
 console.log((await rb.run("Summarise what this project does")).text);
 ```
 
-`model` takes `latest`, `auto` or a model name, and `response.model` says which one ran. `run_many` / `runMany` runs prompts side by side and never fails for lack of room: runs queue until rbridge can take them, `schema` returns parsed JSON, `skills` takes the folders your program ships, `approve` decides permission requests and `max_cost_usd` caps spending. See the [Node.js](https://github.com/runtime-bridge/rbridge-sdk-ts) and [Python](https://github.com/runtime-bridge/rbridge-sdk-python) SDKs.
+`files` takes paths or uploads (FastAPI's `UploadFile`, a browser `File`), `schema` takes a JSON schema or a Pydantic model (`response.parsed` is then an instance), `rb.skills()` lists the library for a picker, `model` takes `latest`, `auto` or a model name, and `response.model` says which one ran. `run_many` / `runMany` runs prompts side by side and never fails for lack of room: runs queue until rbridge can take them, `schema` returns parsed JSON, `skills` takes the folders your program ships, `approve` decides permission requests and `max_cost_usd` caps spending. See the [Node.js](https://github.com/runtime-bridge/rbridge-sdk-ts) and [Python](https://github.com/runtime-bridge/rbridge-sdk-python) SDKs.
 
 ### Daemon
 
@@ -215,7 +216,8 @@ Configuration is YAML, merged in this order, later layers winning:
 1. built-in defaults
 2. system: `/etc/rbridge/config.yaml` (macOS `/Library/Application Support/rbridge/config.yaml`, Windows `%ProgramData%\rbridge\config.yaml`)
 3. user: `~/.config/rbridge/config.yaml` (macOS `~/Library/Application Support/rbridge/config.yaml`, Windows `%AppData%\rbridge\config.yaml`)
-4. project: `.rbridge.yaml` in the current directory
+4. app: `rbridge.yaml` beside `RBRIDGE_HOME`; with rbridge installed into a project through an SDK, that is the project's own folder, read without any setup
+5. project: `.rbridge.yaml` in the current directory
 
 The system file can list `locked` keys that the user and project layers cannot change. Unknown keys are an error.
 
