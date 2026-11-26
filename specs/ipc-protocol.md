@@ -74,7 +74,9 @@ When the session closes the daemon sends `{"jsonrpc":"2.0","method":"session.end
 {"jsonrpc":"2.0","id":5,"error":{"code":-32000,"message":"...","data":{"code":"session_not_found","message":"...","details":{}}}}
 ```
 
-`error.data.code` is one of rbridge's stable error codes. JSON-RPC codes: -32700 parse error, -32601 unknown method, -32602 invalid handshake parameters, -32002 not initialized, -32000 every rbridge error.
+`error.data.code` is one of rbridge's stable error codes. `error.data.retryable` is true when the same request may succeed later, such as when every session slot is busy; the SDKs retry such errors when opening a session.
+
+A task may set `slot_wait` (nanoseconds): how long its session queues for a free slot and, in the daemon, for a place under `daemon.max_sessions_per_client`. Negative waits until one frees; zero uses `execution.slot_wait`. A task's `model` may be `latest`, `auto`, a name from `providers.<id>.models`, or a model the runtime accepts; results carry `model`, the model the runtime reported running. JSON-RPC codes: -32700 parse error, -32601 unknown method, -32602 invalid handshake parameters, -32002 not initialized, -32000 every rbridge error.
 
 ## Lifetime
 

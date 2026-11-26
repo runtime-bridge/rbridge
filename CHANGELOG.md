@@ -2,6 +2,10 @@
 
 ## v1.0.0 (unreleased)
 
+- Parallel runs no longer fail under load. Sessions waiting for a slot form a first-come-first-served queue instead of polling, a task can wait until a slot frees (`slot_wait` below zero), the per-client session limit reserves its places so concurrent opens cannot all pass it, and a client at its limit waits instead of failing. Errors say whether they are `retryable`, and the SDKs queue every run and retry retryable errors when opening a session. 80 runs requested at once through 2 slots all finish, where 28 used to fail.
+
+- Model keywords: `latest` (the runtime's newest flagship), `auto` (its own recommended choice, or the model pinned in `providers.<id>.model`) and names of your own in `providers.<id>.models`, from the CLI, the SDKs and HTTP. ACP runtimes are checked against the models they list, accepting a name without its provider prefix and suggesting the closest on a typo; model servers take their most recently pulled model. Results and session records carry the model that ran, and `rbridge providers show` lists the names.
+
 - Fixed: adding the same skill from several sessions at once (as an SDK's `run_many` can) could leave the library with a record whose files were gone. Copies now land atomically and concurrent adds are serialised.
 
 - An everyday API in both SDKs, in the shape of the familiar model SDKs with the runtime in place of the model: `Rbridge` (and `AsyncRbridge` in Python) with `run(prompt, runtime=...)`, `stream=True` to print the answer as it is written while still returning it (a function receives the chunks; `stream()` is the iterator), `chat=True` to make every run continue one conversation, a list of messages in one call, everything settable once on `Rbridge(...)`, `chat()` for separate conversations, `run_many` / `runMany` for several at once, `schema` for parsed JSON, skill folders by path, permission handling as one option, and a spending limit. The lower-level clients are unchanged underneath.

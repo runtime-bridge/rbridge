@@ -60,6 +60,7 @@ $ rbridge run --workspace ~/src/app "Summarise what this project does"
 $ rbridge run --provider opencode --model ollama/qwen3:8b --quiet "List the TODO comments"
 $ echo "Explain main.go" | rbridge run --json
 $ rbridge chat --provider claude-code       # a normal conversation, streamed; /exit to leave
+$ rbridge run --model latest "..."          # the runtime's newest flagship; auto = its own recommended choice
 ```
 
 A mistyped command or runtime gets a suggestion (`rbridge skill list` answers "did you mean skills?"), and `ls`, `rm` and `info` work as aliases.
@@ -164,7 +165,7 @@ const rb = new Rbridge({ runtime: "claude-code" });
 console.log((await rb.run("Summarise what this project does")).text);
 ```
 
-`run_many` / `runMany` runs prompts side by side, `schema` returns parsed JSON, `skills` takes the folders your program ships, `approve` decides permission requests and `max_cost_usd` caps spending. See the [Node.js](https://github.com/runtime-bridge/rbridge-sdk-ts) and [Python](https://github.com/runtime-bridge/rbridge-sdk-python) SDKs.
+`model` takes `latest`, `auto` or a model name, and `response.model` says which one ran. `run_many` / `runMany` runs prompts side by side and never fails for lack of room: runs queue until rbridge can take them, `schema` returns parsed JSON, `skills` takes the folders your program ships, `approve` decides permission requests and `max_cost_usd` caps spending. See the [Node.js](https://github.com/runtime-bridge/rbridge-sdk-ts) and [Python](https://github.com/runtime-bridge/rbridge-sdk-python) SDKs.
 
 ### Daemon
 
