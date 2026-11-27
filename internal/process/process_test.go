@@ -3,6 +3,7 @@
 package process
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -108,5 +109,51 @@ func TestContextCancelStops(t *testing.T) {
 func TestRunMissingBinary(t *testing.T) {
 	if _, err := Run(context.Background(), Spec{Path: "/nonexistent/rbridge-test-binary"}); err == nil {
 		t.Fatal("expected start error")
+	}
+}
+
+// Stopping a process must end even when its result never arrives.
+func TestStopTreeIsBounded(t *testing.T) {
+	cmd := exec.Command("sleep", "30")
+	Prepare(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Wait()
+	never := make(chan error)
+	stopped := make(chan struct{})
+	go func() {
+		StopTree(cmd, never, 100*time.Millisecond)
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopTree waited for ever")
+	}
+}
+
+// A process that exits while a child it detached keeps its output pipe open
+// must still be waited for.
+func TestWaitIgnoresADetachedChildsPipes(t *testing.T) {
+	if _, err := exec.LookPath("setsid"); err != nil {
+		t.Skip("no setsid here")
+	}
+	cmd := exec.Command("sh", "-c", "setsid sleep 30 & exit 0")
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	Prepare(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("Wait blocked on a detached child's pipe")
 	}
 }
