@@ -104,7 +104,7 @@ Claude Code keeps each account in its own directory, chosen with `CLAUDE_CONFIG_
 | `event_buffer` | `2000` | Events kept per session for replay |
 | `max_sessions_per_client` | `8` | Open sessions per client name; `0` is no limit. A client at its limit waits for one of its sessions to close, as long as `slot_wait` allows |
 | `requests_per_second` | `20` | Per client, bursts of twice that (HTTP); a refused request is retryable |
-| `session_idle_timeout` | `30m` | Close daemon sessions nobody uses |
+| `session_idle_timeout` | `30m` | Close daemon sessions nobody uses, including those of a client that has gone (an application restarted or killed), so they do not keep their slots |
 
 ## sandbox
 
