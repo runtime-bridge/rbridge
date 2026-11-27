@@ -2,6 +2,8 @@
 
 ## v1.0.0 (unreleased)
 
+- Fixed: closing a session, and so stopping the daemon, could hang for ever when a runtime exited but a process it had detached kept its output open. Waiting for a runtime's exit now ends five seconds after it exits, and stopping a process tree no longer waits without limit after the kill.
+
 - Fixed: a client that went away (an application restarted or killed) could hold its daemon slots for ever. When its connection closed, the daemon waited for the client's pending requests before cancelling them, and an open waiting for a free slot never finished, so the client's sessions kept their subscriptions and were never closed as idle. Pending requests are now cancelled first, and the client's sessions close after `daemon.session_idle_timeout` (checked at least twice per timeout), so the same client reconnecting gets in.
 
 - Fixed: `rbridge sessions cancel` on a session the daemon runs interrupted the daemon itself, ending every session it had. It now asks the daemon to close that one session. The Go client gains `CloseSession`.
