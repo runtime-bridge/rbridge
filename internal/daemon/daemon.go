@@ -211,7 +211,7 @@ func Run(ctx context.Context, o Options) error {
 		o.Ready(state)
 	}
 
-	reap := time.NewTicker(time.Minute)
+	reap := time.NewTicker(reapEvery(o.Config.Daemon.SessionIdleTimeout))
 	defer reap.Stop()
 	var idleTick <-chan time.Time
 	if o.ExitWhenIdle > 0 {
@@ -320,4 +320,14 @@ func (h redactHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h redactHandler) WithGroup(name string) slog.Handler {
 	return redactHandler{inner: h.inner.WithGroup(name), r: h.r}
+}
+
+// reapEvery is how often idle sessions are looked for: every minute, or more
+// often for a short session_idle_timeout, so a session is closed close to its
+// timeout.
+func reapEvery(idle time.Duration) time.Duration {
+	if idle <= 0 {
+		return time.Minute
+	}
+	return min(time.Minute, max(idle/2, 10*time.Millisecond))
 }

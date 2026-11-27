@@ -98,7 +98,14 @@ func (c *ipcConn) serve(parent context.Context) {
 	sc := bufio.NewScanner(c.conn)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	// When the client goes, its requests are cancelled before they are waited
+	// for: an open waiting for a free slot would otherwise wait for ever, and
+	// keep this connection's subscriptions, so its idle sessions are never
+	// closed and keep the slots it is waiting for.
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
 	for sc.Scan() {
 		var m rpcMsg
 		if err := json.Unmarshal(sc.Bytes(), &m); err != nil {

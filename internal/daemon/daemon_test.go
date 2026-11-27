@@ -596,3 +596,90 @@ func TestExitWhenIdle(t *testing.T) {
 		t.Fatalf("socket left behind: %v", err)
 	}
 }
+
+// A client that dies with a session open and another open waiting for room
+// must not hold its slots for ever: once its connection is gone, its sessions
+// are closed after session_idle_timeout, and the same client reconnecting (an
+// app restarted) gets in.
+func TestDeadClientFreesItsSlots(t *testing.T) {
+	e := start(t, nil, func(o *daemon.Options) {
+		o.Config.Daemon.MaxSessionsPerClient = 1
+		o.Config.Daemon.SessionIdleTimeout = 300 * time.Millisecond
+	})
+	c, err := net.Dial("unix", e.state.Socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rd := bufio.NewReader(c)
+	next := 0
+	call := func(method string, params any, wait bool) map[string]any {
+		next++
+		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": next, "method": method, "params": params})
+		c.Write(append(b, '\n'))
+		if !wait {
+			return nil
+		}
+		for {
+			line, err := rd.ReadBytes('\n')
+			if err != nil {
+				t.Fatalf("%s: %v", method, err)
+			}
+			var m map[string]any
+			json.Unmarshal(line, &m)
+			if id, ok := m["id"].(float64); ok && int(id) == next {
+				if m["error"] != nil {
+					t.Fatalf("%s: %v", method, m["error"])
+				}
+				r, _ := m["result"].(map[string]any)
+				return r
+			}
+		}
+	}
+	call("initialize", map[string]any{"client": "app"}, true)
+	open := map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}
+	rec := call("sessions.open", open, true)
+	call("sessions.subscribe", map[string]any{"id": rec["id"]}, true)
+	call("sessions.open", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode", "slot_wait": -1}}, false)
+	time.Sleep(200 * time.Millisecond)
+	c.Close() // the app dies without closing anything
+
+	again := map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode", "slot_wait": int64(5 * time.Second)}}
+	resp, b := e.req("POST", "/v1/sessions", "app", again, nil)
+	if resp.StatusCode != 201 {
+		t.Fatalf("the restarted client could not get in: %d %s", resp.StatusCode, b)
+	}
+}
+
+// Closing one session through the daemon ends that session only: the client's
+// others stay open and the daemon keeps running.
+func TestCloseOneSessionLeavesTheRest(t *testing.T) {
+	e := start(t, nil)
+	ctx := context.Background()
+	var ids []string
+	for i := 0; i < 2; i++ {
+		resp, b := e.req("POST", "/v1/sessions", "app", map[string]any{"task": map[string]any{"workspace": e.ws, "provider": "opencode"}}, nil)
+		if resp.StatusCode != 201 {
+			t.Fatalf("open: %s", b)
+		}
+		var rec domain.SessionRecord
+		json.Unmarshal(b, &rec)
+		ids = append(ids, rec.ID)
+	}
+	r, err := bridge.Connect(ctx, bridge.ConnectOptions{Socket: e.files.Socket, Client: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if err := r.CloseSession(ctx, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if resp, _ := e.req("GET", "/v1/sessions/"+ids[1], "app", nil, nil); resp.StatusCode != 200 {
+		t.Fatalf("the other session went too: %d", resp.StatusCode)
+	}
+	select {
+	case err := <-e.done:
+		t.Fatalf("the daemon stopped: %v", err)
+	default:
+	}
+	e.req("DELETE", "/v1/sessions/"+ids[1], "app", nil, nil)
+}
