@@ -144,6 +144,11 @@ func Run(ctx context.Context, s Spec) (Output, error) {
 	return out, waitErr
 }
 
+// waitDelay bounds how long Wait waits, once a process has exited, for output
+// pipes that a child it detached (its own session, beyond the tree kill)
+// keeps open.
+const waitDelay = 5 * time.Second
+
 // StopTree asks the process tree to stop, waits up to grace, then kills it.
 // done must deliver the result of cmd.Wait.
 func StopTree(cmd *exec.Cmd, done <-chan error, grace time.Duration) error {
@@ -158,7 +163,15 @@ func StopTree(cmd *exec.Cmd, done <-chan error, grace time.Duration) error {
 	case <-time.After(grace):
 	}
 	killTree(cmd)
-	return <-done
+	// A killed process is reaped at once; if its result still does not come
+	// (something else holds what Wait waits for), stop waiting rather than
+	// hold up every close and shutdown behind it.
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(grace):
+		return errors.New("process: no exit status after kill")
+	}
 }
 
 // KillGroup kills whatever is left of the process tree after the leader exited.

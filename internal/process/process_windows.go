@@ -17,6 +17,7 @@ func Prepare(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.CreationFlags |= createNewProcessGroup
+	cmd.WaitDelay = waitDelay
 }
 
 // Windows has no polite signal for console-less children, so both steps use taskkill.

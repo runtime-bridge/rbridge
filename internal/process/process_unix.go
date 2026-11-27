@@ -14,6 +14,7 @@ func Prepare(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.Setpgid = true
+	cmd.WaitDelay = waitDelay
 }
 
 func terminateTree(cmd *exec.Cmd) {
