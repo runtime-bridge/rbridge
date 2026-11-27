@@ -273,6 +273,12 @@ func (r *Remote) Sessions(ctx context.Context) ([]SessionRecord, error) {
 	return out, r.call(ctx, "sessions.list", nil, &out)
 }
 
+// CloseSession ends one of this client's sessions on the daemon, stopping a
+// turn in progress.
+func (r *Remote) CloseSession(ctx context.Context, id string) error {
+	return r.call(ctx, "sessions.close", map[string]string{"id": id}, nil)
+}
+
 // Status returns the daemon's status.
 func (r *Remote) Status(ctx context.Context) (daemon.Status, error) {
 	var s daemon.Status

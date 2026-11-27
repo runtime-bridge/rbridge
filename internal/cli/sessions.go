@@ -10,8 +10,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/runtime-bridge/rbridge/internal/daemon"
 	"github.com/runtime-bridge/rbridge/internal/domain"
 	"github.com/runtime-bridge/rbridge/internal/service"
+	"github.com/runtime-bridge/rbridge/pkg/bridge"
 )
 
 func cmdSessions(ctx context.Context, args []string, env Env) error {
@@ -157,6 +159,22 @@ func sessionsCancel(ctx context.Context, args []string, env Env) error {
 	svc, err := newService(env)
 	if err != nil {
 		return err
+	}
+	// A session the daemon runs is closed by the daemon, on its own: the
+	// daemon is shared, and interrupting it would end every session it has.
+	if rec, err := svc.SessionRecord(ctx, pos[0]); err == nil {
+		if st, err := daemon.ReadState(daemon.FilesFor(svc.Paths())); err == nil && st.PID != 0 && st.PID == rec.OwnerPID {
+			r, err := bridge.Connect(ctx, bridge.ConnectOptions{Socket: st.Socket, Client: rec.Client})
+			if err != nil {
+				return err
+			}
+			defer r.Close()
+			if err := r.CloseSession(ctx, rec.ID); err != nil {
+				return err
+			}
+			fmt.Fprintf(env.Stdout, "closed %s in the rbridge daemon\n", rec.ID)
+			return nil
+		}
 	}
 	if err := svc.CancelSession(ctx, pos[0]); err != nil {
 		return err
